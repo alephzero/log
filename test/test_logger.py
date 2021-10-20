@@ -94,7 +94,7 @@ def test_policy_save_all(sandbox):
         foo.pub(f"foo_{i}")
         bar.pub(f"bar_{i}")
 
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
@@ -130,7 +130,7 @@ def test_policy_drop_all(sandbox):
         foo.pub(f"foo_{i}")
         bar.pub(f"bar_{i}")
 
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
@@ -182,7 +182,7 @@ def test_policy_count(sandbox):
     time.sleep(0.1)
 
     bar.pub("save_1")
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
@@ -230,7 +230,7 @@ def test_policy_time(sandbox):
             bar.pub("save_0")
         time.sleep(0.25)
 
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
@@ -272,7 +272,7 @@ def test_trigger_rate(sandbox):
         foo.pub(f"foo_{i}")
         time.sleep(0.25)
 
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
@@ -314,7 +314,7 @@ def test_trigger_cron(sandbox):
         foo.pub(f"foo_{i}")
         time.sleep(0.25)
 
-    time.sleep(0.1)
+    time.sleep(0.2)
 
     sandbox.shutdown()
 
