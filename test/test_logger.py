@@ -227,9 +227,7 @@ def test_policy_time(sandbox):
 
     sandbox.shutdown()
 
-    assert sandbox.logged_packets() == {
-        "foo": [f"foo_{i}" for i in range(13, 23)]
-    }
+    assert sandbox.logged_packets() == {"foo": [f"foo_{i}" for i in range(13, 23)]}
 
 
 def test_trigger_rate(sandbox):
@@ -270,3 +268,43 @@ def test_trigger_rate(sandbox):
     sandbox.shutdown()
 
     assert len(sandbox.logged_packets()["foo"]) in [10, 11]
+
+
+def test_trigger_cron(sandbox):
+    foo = a0.Publisher("foo")
+
+    sandbox.start(
+        [
+            {
+                "savepath": sandbox.savepath.name,
+                "protocol": "pubsub",
+                "topic": "foo",
+                "policies": [
+                    {
+                        "type": "count",
+                        "args": {
+                            "save_next": 1,
+                        },
+                        "triggers": [
+                            {
+                                "type": "cron",
+                                "args": {
+                                    "pattern": "*/2 * * * * *",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+
+    for i in range(20):
+        foo.pub(f"foo_{i}")
+        time.sleep(0.25)
+
+    time.sleep(0.1)
+
+    sandbox.shutdown()
+
+    assert len(sandbox.logged_packets()["foo"]) in [3, 4]
