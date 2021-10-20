@@ -3,13 +3,13 @@ set -e
 cd "$(dirname "$0")"
 
 docker build \
-    -t alephzero_logger \
+    -t alephzero/log:cov \
     --build-arg=mode=cov \
     -f ../Dockerfile \
     ..
 
 docker build \
-    -t alephzero_logger_test \
+    -t alephzero/log_test \
     -f ./Dockerfile \
     ..
 
@@ -18,7 +18,4 @@ docker run \
     -it \
     --pid=host \
     --ipc=host \
-    alephzero_logger_test
-
-    # --entrypoint=bash \
-    # bash
+    alephzero/log_test

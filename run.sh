@@ -3,7 +3,7 @@ cd "$(dirname "$0")"
 
 set -e
 
-docker build -t alephzero_log .
+docker build -t alephzero/log .
 
 # TODO(lshamis): Take ipc container as arg.
 
@@ -12,4 +12,4 @@ docker run \
     --name=a0_log \
     --ipc=host \
     --pid=host \
-    alephzero_log
+    alephzero/log
