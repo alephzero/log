@@ -27,7 +27,7 @@ public:
   }
 
   static bool register_(std::string key, Factory fact) {
-    return registrar()->insert({std::move(key), std::move(fact)})->second;
+    return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
   Trigger(Config config, Notify notify) {

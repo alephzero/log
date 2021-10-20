@@ -41,7 +41,7 @@ public:
   }
 
   static bool register_(std::string key, Factory fact) {
-    return registrar()->insert({std::move(key), std::move(fact)})->second;
+    return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
   Policy(Config config, std::mutex* mtx) {
@@ -68,8 +68,12 @@ private:
 A0_STATIC_INLINE
 void from_json(const nlohmann::json& j, Policy::Config& t) {
   j.at("type").get_to(t.type);
-  t.args = j.at("args");
-  j.at("triggers").get_to(t.triggers);
+  if (j.count("args")) {
+    t.args = j.at("args");
+  }
+  if (j.count("triggers")) {
+    j.at("triggers").get_to(t.triggers);
+  }
 }
 
 }  // namespace a0::logger

@@ -18,8 +18,6 @@
 #include <iostream>
 #include <unistd.h>
 
-static FILE* dbg_fd;
-
 namespace a0::logger {
 
 static const size_t kMaxLogfileSize = 128 * 1024 * 1024;
@@ -40,30 +38,39 @@ class FileLogger {
 
 public:
   FileLogger(Rule rule, File read_file) : rule{rule}, read_file{read_file} {
-    fprintf(dbg_fd, "FileLogger(%s)\n", read_file.path().c_str());
     if (rule.policies.empty()) {
       return;
     }
 
     for (auto&& policy_cfg : rule.policies) {
-      policies.push_back(Policy(policy_cfg, &mtx));
+      policies.emplace_back(policy_cfg, &mtx);
     }
 
     reader = Reader(read_file, A0_INIT_OLDEST, A0_ITER_NEXT, [this](Packet pkt) {
-      fprintf(dbg_fd, "reader callback\n");
       std::unique_lock<std::mutex> lk(mtx);
       onpkt(pkt);
     });
   }
 
   ~FileLogger() {
-    fprintf(dbg_fd, "~FileLogger()\n");
     reader = {};
+
+    for (auto& pkt : buffer) {
+      if (should_save(pkt) == SaveDecision::SAVE) {
+        maybe_start_next_file(pkt);
+        writer.write(pkt);
+      }
+    }
+
     close_current_file();
   }
 
 private:
   void onpkt(Packet pkt) {
+    for (auto&& p : policies) {
+      p.onpkt(pkt);
+    }
+
     buffer.push_back(pkt);
 
     while (!buffer.empty()) {
@@ -109,7 +116,6 @@ private:
   }
 
   void maybe_start_next_file(Packet pkt) {
-    fprintf(dbg_fd, "maybe_start_next_file\n");
     // TODO(lshamis): Should we split on the hour mark?
     if (!write_file.c || write_would_overflow(pkt)) {
       start_next_file(pkt);
@@ -123,7 +129,6 @@ private:
   }
 
   void start_next_file(Packet pkt) {
-    fprintf(dbg_fd, "start_next_file\n");
     close_current_file();
 
     auto rel = std::filesystem::relative(read_file.path(), rule.searchpath);
@@ -140,7 +145,6 @@ private:
     dst += "@";
     dst += pkt.headers().find("a0_time_wall")->second;
     dst += ".a0";
-    fprintf(dbg_fd, "creating out file: %s\n", dst.c_str());
 
     auto file_opts = File::Options::DEFAULT;
     file_opts.create_options.size = kMaxLogfileSize;
@@ -161,7 +165,7 @@ class Logger {
 
   void maybe_create_file_logger(const std::string& filepath) {
     for (auto&& rule : rules) {
-      if (match(rule, filepath)) {
+      if (rule.match(filepath)) {
         file_loggers.push_back(std::make_unique<FileLogger>(rule, a0::File(filepath)));
         return;
       }
@@ -171,37 +175,22 @@ class Logger {
 public:
   Logger(std::vector<Rule> rules_) : rules{std::move(rules_)} {
     for (auto&& rule : rules) {
-      for (auto&& watch_path : rule.watch_paths) {
-        fprintf(dbg_fd, "watch_path=%s\n", watch_path.c_str());
-        watchers.emplace_back(watch_path, [this](const std::string& filepath) {
-          fprintf(dbg_fd, "found filepath=%s\n", filepath.c_str());
-          std::unique_lock<std::mutex> lk(mtx);
-          if (seen_filepath.insert(filepath).second) {
-            maybe_create_file_logger(filepath);
-          }
-        });
-      }
+      watchers.emplace_back(rule.watch_path, [this](const std::string& filepath) {
+        std::unique_lock<std::mutex> lk(mtx);
+        if (seen_filepath.insert(filepath).second) {
+          maybe_create_file_logger(filepath);
+        }
+      });
     }
   }
 };
 
 }  // namespace a0::logger
 
-static inline
-std::string_view env_lookup(std::string_view key, std::string_view default_) {
-  const char* val = std::getenv(key.data());
-  return val ? val : default_;
-}
-
 int main() {
-  dbg_fd = fopen("/dev/shm/logger.dbg", "w");
-  auto LOGGER_READY_TOPIC = std::string(env_lookup("LOGGER_READY_TOPIC", "logger_ready"));
-
   a0::Cfg cfg(a0::env::topic());
   auto rules = cfg.var<std::vector<a0::logger::Rule>>("");
   a0::logger::Logger logger(*rules);
-
-  a0::Publisher(LOGGER_READY_TOPIC).pub("ready");
 
   sigset_t sigset;
   sigemptyset(&sigset);
@@ -212,9 +201,5 @@ int main() {
   sigprocmask(SIG_BLOCK, &sigset, NULL);
 
   int signo;
-  fprintf(dbg_fd, "waiting for shutdown signal\n");
   sigwait(&sigset, &signo);
-  fprintf(dbg_fd, "got shutdown signal\n");
-  fflush(dbg_fd);
-  fclose(dbg_fd);
 }

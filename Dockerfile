@@ -7,8 +7,6 @@ FROM ubuntu:21.04 as builder
 RUN apt update && DEBIAN_FRONTEND="noninteractive" apt install -y \
     g++ git make wget zlib1g-dev
 
-ENV version 0.0.2
-
 RUN mkdir -p /alephzero && \
     cd /alephzero && \
     git clone --depth 1 https://github.com/alephzero/alephzero.git && \
@@ -43,7 +41,6 @@ RUN g++ \
     /logger.cpp \
     -L/lib \
     -Wl,-Bstatic \
-    -lz \
     -lalephzero \
     -Wl,-Bdynamic \
     -lpthread
@@ -57,21 +54,3 @@ FROM ubuntu:21.04
 COPY --from=builder /logger.bin /
 
 ENTRYPOINT ["/logger.bin"]
-
-
-
-# RUN apt update && DEBIAN_FRONTEND="noninteractive" apt install -y \
-#     git python3-dev python3-pip valgrind vim
-# RUN python3 -m pip install -U \
-#     pip \
-#     wheel \
-#     setuptools \
-#     pytest \
-#     pytest-asyncio \
-#     requests \
-#     websockets==9.1
-
-# RUN python3 -m pip install alephzero
-
-# COPY ./test /test
-

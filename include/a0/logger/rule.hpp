@@ -22,28 +22,18 @@ struct Rule {
     PUBSUB,
     RPC,
   };
-  struct Match {
-    Protocol protocol;
-    std::string pattern;
-  };
-  std::vector<Match> match;
+  Protocol protocol;
+  std::string topic;
 
-  // std::string search_pattern;
-  // a0::PathGlob search_glob;
   std::vector<a0::logger::Policy::Config> policies;
 
-  std::vector<std::string> watch_paths;
-  std::vector<a0::PathGlob> glob_cache;
-};
+  std::string watch_path;
+  a0::PathGlob glob_cache;
 
-bool match(const Rule& r, const std::string& path) {
-  for (auto& glob : r.glob_cache) {
-    if (glob.match(path)) {
-      return true;
-    }
+  bool match(const std::string& path) const {
+    return glob_cache.match(path);
   }
-  return false;
-}
+};
 
 NLOHMANN_JSON_SERIALIZE_ENUM(Rule::Protocol, {
   {Rule::Protocol::FILE, "file"},
@@ -53,13 +43,6 @@ NLOHMANN_JSON_SERIALIZE_ENUM(Rule::Protocol, {
   {Rule::Protocol::PUBSUB, "pubsub"},
   {Rule::Protocol::RPC, "rpc"},
 });
-
-
-static inline
-void from_json(const nlohmann::json& j, Rule::Match& m) {
-  j.at("protocol").get_to(m.protocol);
-  j.at("pattern").get_to(m.pattern);
-}
 
 static inline
 std::string replace_all(std::string str, const std::string& search, const std::string& replace) {
@@ -73,34 +56,14 @@ std::string replace_all(std::string str, const std::string& search, const std::s
 
 static inline
 void from_json(const nlohmann::json& j, Rule& r) {
-  r.searchpath = "/dev/shm/";
+  r.searchpath = a0::env::root();
   if (j.count("searchpath")) {
     j.at("searchpath").get_to(r.searchpath);
   }
   j.at("savepath").get_to(r.savepath);
-  j.at("match").get_to(r.match);
+  j.at("protocol").get_to(r.protocol);
+  j.at("topic").get_to(r.topic);
   j.at("policies").get_to(r.policies);
-
-  // j.at("pattern_type").get_to(r.pattern_type);
-  // j.at("pattern").get_to(r.pattern);
-  // if (r.pattern[0] == '/') {
-  //   throw std::invalid_argument("pattern cannot begin with '/'");
-  // }
-
-
-  // std::string tmpl = std::map<Rule::Protocol, std::string>{
-  //   {Rule::Protocol::FILE, "{topic}"},
-  //   {Rule::Protocol::CFG, a0_env_topic_tmpl_cfg()},
-  //   {Rule::Protocol::LOG, a0_env_topic_tmpl_log()},
-  //   {Rule::Protocol::PRPC, a0_env_topic_tmpl_prpc()},
-  //   {Rule::Protocol::PUBSUB, a0_env_topic_tmpl_pubsub()},
-  //   {Rule::Protocol::RPC, a0_env_topic_tmpl_rpc()},
-  // }[r.pattern_type];
-  // r.search_pattern = r.searchpath / replace_all(tmpl, "{topic}", r.pattern);
-
-  // r.search_glob = a0::PathGlob(r.search_pattern);
-
-  // j.at("policies").get_to(r.policies);
 
   std::map<Rule::Protocol, std::string> tmpl_map{
     {Rule::Protocol::FILE, "{topic}"},
@@ -110,11 +73,9 @@ void from_json(const nlohmann::json& j, Rule& r) {
     {Rule::Protocol::PUBSUB, a0_env_topic_tmpl_pubsub()},
     {Rule::Protocol::RPC, a0_env_topic_tmpl_rpc()},
   };
-  for (auto& m : r.match) {
-    auto path = r.searchpath / replace_all(tmpl_map[m.protocol], "{topic}", m.pattern);
-    r.watch_paths.emplace_back(path);
-    r.glob_cache.emplace_back(path);
-  }
+
+  r.watch_path = r.searchpath / replace_all(tmpl_map[r.protocol], "{topic}", r.topic);
+  r.glob_cache = a0::PathGlob(r.watch_path);
 }
 
 }  // namespace a0::logger

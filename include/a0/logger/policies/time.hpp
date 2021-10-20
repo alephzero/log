@@ -4,6 +4,7 @@
 #include <chrono>
 #include <set>
 #include <sstream>
+#include <iostream>
 
 #include "a0/logger/policy.hpp"
 
@@ -52,22 +53,21 @@ class TimePolicy : public Policy::Base {
   std::chrono::nanoseconds save_next;
 
   std::deque<TimeMono> trigger_tss;
-  std::set<TimeMono> pkt_tss;
-  std::map<std::shared_ptr<a0_packet_t>, TimeMono> ts_cache;
+  std::deque<std::pair<Packet, TimeMono>> pkt_tss;
 
   std::chrono::nanoseconds parse_duration(std::string str) {
     double val;
     std::string suffix;
     std::string remainder;
 
-    std::stringstream(std::move(str)) << val << suffix << remainder;
-    if (val < 0) {
+    std::stringstream(std::move(str)) >> val >> suffix >> remainder;
+    if (val <= 0) {
       throw std::invalid_argument("TimePolicy] Duration parse failed. Value may not be negative");
     }
     if (!remainder.empty()) {
       throw std::invalid_argument("TimePolicy] Duration parse failed. Expect something like 300ms or 2.5s");
     }
-    if (!suffix.empty()) {
+    if (suffix.empty()) {
       throw std::invalid_argument("TimePolicy] Duration parse failed. Missing units");
     }
 
@@ -90,11 +90,6 @@ class TimePolicy : public Policy::Base {
   }
 
  public:
-  // Modifiable for tests.
-  std::function<TimeMono()> now{[]() {
-    return TimeMono::now();
-  }};
-
   TimePolicy(const nlohmann::json& args) {
     if (!args.count("save_prev") && !args.count("save_next")) {
       throw std::invalid_argument("TimePolicy] Missing at least one of 'save_prev' or 'save_next'");
@@ -111,45 +106,44 @@ class TimePolicy : public Policy::Base {
     for (auto&& [key, val] : pkt.headers()) {
       if (key == "a0_time_mono") {
         auto time = TimeMono::parse(val);
-        pkt_tss.insert(time);
-        ts_cache[pkt.c] = time;
+        pkt_tss.push_back({pkt, time});
         return;
       }
     }
   }
 
   void ondrop(Packet pkt) override {
-    if (ts_cache.count(pkt.c)) {
-      pkt_tss.erase(ts_cache[pkt.c]);
-      ts_cache.erase(pkt.c);
+    if (pkt_tss.front().first.c == pkt.c) {
+      pkt_tss.pop_front();
     }
   }
 
   void ontrigger() override {
-    trigger_tss.push_back(now());
+    trigger_tss.push_back(TimeMono::now());
   }
 
   SaveDecision should_save(Packet pkt) override {
-    if (pkt_tss.empty() || !ts_cache.count(pkt.c)) {
+    if (pkt_tss.empty() || pkt_tss.front().first.c != pkt.c) {
       return SaveDecision::DROP;
     }
+
+    TimeMono pkt_ts = pkt_tss.front().second;
+
     // Do some cleanup.
-    while (!trigger_tss.empty() && trigger_tss.front() + save_next < *pkt_tss.begin()) {
+    while (!trigger_tss.empty() && trigger_tss.front() + save_next < pkt_ts) {
       trigger_tss.pop_front();
     }
 
-    TimeMono pts = ts_cache[pkt.c];
-
     // Check if any windows match.
-    for (auto& tts : trigger_tss) {
-      if (tts - save_prev <= pts && pts <= tts + save_next) {
+    for (auto& trig_ts : trigger_tss) {
+      if (trig_ts - save_prev <= pkt_ts && pkt_ts <= trig_ts + save_next) {
         return SaveDecision::SAVE;
       }
     }
 
     // No trigger has marked this message for saving.
     // If a trigger can still save it, defer. Otherwise drop.
-    if (now() < pts + save_prev) {
+    if (TimeMono::now() < pkt_ts + save_prev) {
       return SaveDecision::DEFER;
     }
     return SaveDecision::DROP;
