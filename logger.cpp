@@ -22,8 +22,25 @@ namespace a0::logger {
 
 static const size_t kMaxLogfileSize = 128 * 1024 * 1024;
 
+struct Config {
+  std::filesystem::path searchpath;
+  std::filesystem::path savepath;
+  std::vector<a0::logger::Rule> rules;
+};
+
+static inline
+void from_json(const nlohmann::json& j, Config& c) {
+  c.searchpath = a0::env::root();
+  if (j.count("searchpath")) {
+    j.at("searchpath").get_to(c.searchpath);
+  }
+  j.at("savepath").get_to(c.savepath);
+  j.at("rules").get_to(c.rules);
+}
+
 class FileLogger {
-  Rule rule;
+  const Config config;
+  const Rule rule;
   std::mutex mtx;
 
   std::deque<Packet> buffer;
@@ -37,7 +54,8 @@ class FileLogger {
   Reader reader;  // Must be defined last.
 
 public:
-  FileLogger(Rule rule, File read_file) : rule{rule}, read_file{read_file} {
+  FileLogger(Config config, Rule rule, File read_file)
+      : config{config}, rule{rule}, read_file{read_file} {
     if (rule.policies.empty()) {
       return;
     }
@@ -131,7 +149,7 @@ private:
   void start_next_file(Packet pkt) {
     close_current_file();
 
-    auto rel = std::filesystem::relative(read_file.path(), rule.searchpath);
+    auto rel = std::filesystem::relative(read_file.path(), config.searchpath);
 
     auto now = a0::TimeWall::now();
     struct tm now_tm;
@@ -141,7 +159,7 @@ private:
     strftime(&date_str[0], 11, "%Y/%m/%d", &now_tm);
     date_str[10] = 0;
 
-    std::string dst = rule.savepath / std::string(date_str) / rel;
+    std::string dst = config.savepath / std::string(date_str) / rel;
     dst += "@";
     dst += pkt.headers().find("a0_time_wall")->second;
     dst += ".a0";
@@ -156,7 +174,7 @@ private:
 };
 
 class Logger {
-  const std::vector<Rule> rules;
+  const Config config;
 
   std::mutex mtx;
   std::unordered_set<std::string> seen_filepath;
@@ -164,18 +182,20 @@ class Logger {
   std::vector<Discovery> watchers;
 
   void maybe_create_file_logger(const std::string& filepath) {
-    for (auto&& rule : rules) {
-      if (rule.match(filepath)) {
-        file_loggers.push_back(std::make_unique<FileLogger>(rule, a0::File(filepath)));
+    for (auto&& rule : config.rules) {
+      auto path_glob = a0::PathGlob(config.searchpath / rule.relative_watch_path());
+      if (path_glob.match(filepath)) {
+        file_loggers.push_back(std::make_unique<FileLogger>(config, rule, a0::File(filepath)));
         return;
       }
     }
   }
 
 public:
-  Logger(std::vector<Rule> rules_) : rules{std::move(rules_)} {
-    for (auto&& rule : rules) {
-      watchers.emplace_back(rule.watch_path, [this](const std::string& filepath) {
+  Logger(Config config_) : config{std::move(config_)} {
+    for (auto&& rule : config.rules) {
+      auto watch_path = config.searchpath / rule.relative_watch_path();
+      watchers.emplace_back(watch_path, [this](const std::string& filepath) {
         std::unique_lock<std::mutex> lk(mtx);
         if (seen_filepath.insert(filepath).second) {
           maybe_create_file_logger(filepath);
@@ -189,8 +209,8 @@ public:
 
 int main() {
   a0::Cfg cfg(a0::env::topic());
-  auto rules = cfg.var<std::vector<a0::logger::Rule>>("");
-  a0::logger::Logger logger(*rules);
+  auto config = cfg.var<a0::logger::Config>("");
+  a0::logger::Logger logger(*config);
 
   sigset_t sigset;
   sigemptyset(&sigset);

@@ -78,14 +78,16 @@ def test_policy_save_all(sandbox):
     bar = a0.Publisher("bar")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "*",
-                "policies": [{"type": "save_all"}],
-            },
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "*",
+                    "policies": [{"type": "save_all"}],
+                },
+            ],
+        }
     )
 
     for i in range(10):
@@ -107,20 +109,21 @@ def test_policy_drop_all(sandbox):
     bar = a0.Publisher("bar")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [{"type": "drop_all"}],
-            },
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "*",
-                "policies": [{"type": "save_all"}],
-            },
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [{"type": "drop_all"}],
+                },
+                {
+                    "protocol": "pubsub",
+                    "topic": "*",
+                    "policies": [{"type": "save_all"}],
+                },
+            ],
+        }
     )
 
     for i in range(10):
@@ -139,30 +142,32 @@ def test_policy_count(sandbox):
     bar = a0.Publisher("bar")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [
-                    {
-                        "type": "count",
-                        "args": {
-                            "save_prev": 2,
-                            "save_next": 1,
-                        },
-                        "triggers": [
-                            {
-                                "type": "pubsub",
-                                "args": {
-                                    "topic": "bar",
-                                },
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [
+                        {
+                            "type": "count",
+                            "args": {
+                                "save_prev": 2,
+                                "save_next": 1,
+                            },
+                            "triggers": [
+                                {
+                                    "type": "pubsub",
+                                    "args": {
+                                        "topic": "bar",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     for i in range(10):
@@ -191,30 +196,32 @@ def test_policy_time(sandbox):
     bar = a0.Publisher("bar")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [
-                    {
-                        "type": "time",
-                        "args": {
-                            "save_prev": "2s",
-                            "save_next": "500ms",
-                        },
-                        "triggers": [
-                            {
-                                "type": "pubsub",
-                                "args": {
-                                    "topic": "bar",
-                                },
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [
+                        {
+                            "type": "time",
+                            "args": {
+                                "save_prev": "2s",
+                                "save_next": "500ms",
+                            },
+                            "triggers": [
+                                {
+                                    "type": "pubsub",
+                                    "args": {
+                                        "topic": "bar",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     for i in range(40):
@@ -234,29 +241,31 @@ def test_trigger_rate(sandbox):
     foo = a0.Publisher("foo")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [
-                    {
-                        "type": "count",
-                        "args": {
-                            "save_next": 1,
-                        },
-                        "triggers": [
-                            {
-                                "type": "rate",
-                                "args": {
-                                    "hz": 2,
-                                },
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [
+                        {
+                            "type": "count",
+                            "args": {
+                                "save_next": 1,
+                            },
+                            "triggers": [
+                                {
+                                    "type": "rate",
+                                    "args": {
+                                        "hz": 2,
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     for i in range(20):
@@ -274,29 +283,31 @@ def test_trigger_cron(sandbox):
     foo = a0.Publisher("foo")
 
     sandbox.start(
-        [
-            {
-                "savepath": sandbox.savepath.name,
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [
-                    {
-                        "type": "count",
-                        "args": {
-                            "save_next": 1,
-                        },
-                        "triggers": [
-                            {
-                                "type": "cron",
-                                "args": {
-                                    "pattern": "*/2 * * * * *",
-                                },
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
+        {
+            "savepath": sandbox.savepath.name,
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [
+                        {
+                            "type": "count",
+                            "args": {
+                                "save_next": 1,
+                            },
+                            "triggers": [
+                                {
+                                    "type": "cron",
+                                    "args": {
+                                        "pattern": "*/2 * * * * *",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     for i in range(20):
