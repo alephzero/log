@@ -73,7 +73,7 @@ def sandbox():
         logger.shutdown()
 
 
-def test_save_all(sandbox):
+def test_policy_save_all(sandbox):
     foo = a0.Publisher("foo")
     bar = a0.Publisher("bar")
 
@@ -102,7 +102,7 @@ def test_save_all(sandbox):
     }
 
 
-def test_drop_all(sandbox):
+def test_policy_drop_all(sandbox):
     foo = a0.Publisher("foo")
     bar = a0.Publisher("bar")
 
@@ -134,7 +134,7 @@ def test_drop_all(sandbox):
     assert sandbox.logged_packets() == {"bar": [f"bar_{i}" for i in range(10)]}
 
 
-def test_count(sandbox):
+def test_policy_count(sandbox):
     foo = a0.Publisher("foo")
     bar = a0.Publisher("bar")
 
@@ -186,7 +186,7 @@ def test_count(sandbox):
     }
 
 
-def test_time(sandbox):
+def test_policy_time(sandbox):
     foo = a0.Publisher("foo")
     bar = a0.Publisher("bar")
 
@@ -230,3 +230,43 @@ def test_time(sandbox):
     assert sandbox.logged_packets() == {
         "foo": [f"foo_{i}" for i in range(13, 23)]
     }
+
+
+def test_trigger_rate(sandbox):
+    foo = a0.Publisher("foo")
+
+    sandbox.start(
+        [
+            {
+                "savepath": sandbox.savepath.name,
+                "protocol": "pubsub",
+                "topic": "foo",
+                "policies": [
+                    {
+                        "type": "count",
+                        "args": {
+                            "save_next": 1,
+                        },
+                        "triggers": [
+                            {
+                                "type": "rate",
+                                "args": {
+                                    "hz": 2,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+
+    for i in range(20):
+        foo.pub(f"foo_{i}")
+        time.sleep(0.25)
+
+    time.sleep(0.1)
+
+    sandbox.shutdown()
+
+    assert len(sandbox.logged_packets()["foo"]) in [10, 11]
