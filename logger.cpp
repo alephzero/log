@@ -73,10 +73,16 @@ public:
   ~FileLogger() {
     reader = {};
 
-    for (auto& pkt : buffer) {
+    while (!buffer.empty()) {
+      auto pkt = buffer.front();
+      buffer.pop_front();
+
       if (should_save(pkt) == SaveDecision::SAVE) {
         maybe_start_next_file(pkt);
         writer.write(pkt);
+      }
+      for (auto&& p : policies) {
+        p.ondrop(pkt);
       }
     }
 
@@ -129,6 +135,7 @@ private:
     if (write_file.c) {
       auto tlk = write_transport.lock();
       tlk.resize(tlk.used_space());
+      std::filesystem::resize_file(write_file.path(), tlk.used_space());
     }
     write_file = File();
   }
@@ -151,9 +158,15 @@ private:
 
     auto rel = std::filesystem::relative(read_file.path(), config.searchpath);
 
-    auto now = a0::TimeWall::now();
+    auto timestamp = a0::TimeWall::now();
+
+    auto time_iter = pkt.headers().find("a0_time_wall");
+    if (time_iter != pkt.headers().end()) {
+      timestamp = a0::TimeWall::parse(time_iter->second);
+    }
+
     struct tm now_tm;
-    gmtime_r(&now.c->ts.tv_sec, &now_tm);
+    gmtime_r(&timestamp.c->ts.tv_sec, &now_tm);
 
     char date_str[11];
     strftime(&date_str[0], 11, "%Y/%m/%d", &now_tm);
@@ -161,7 +174,7 @@ private:
 
     std::string dst = config.savepath / std::string(date_str) / rel;
     dst += "@";
-    dst += pkt.headers().find("a0_time_wall")->second;
+    dst += timestamp.to_string();
     dst += ".a0";
 
     auto file_opts = File::Options::DEFAULT;

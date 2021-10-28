@@ -4,7 +4,7 @@ This logger is a stand-alone application that listens in on AlephZero communicat
 
 The files are saved in a specified directory with the following subdirectory structure:
 
-    savepath/YYYY/MM/DD/topic@timestamp.log.a0
+    savepath/YYYY/MM/DD/topic@timestamp.a0
 
 These files are AlephZero files, and can therefore be read with `a0::Reader`s.
 
