@@ -8,44 +8,6 @@
 
 #include "a0/logger/policy.hpp"
 
-// TODO(lshamis): Move this into the main alephzero repo.
-namespace a0 {
-
-A0_STATIC_INLINE
-TimeMono operator+(TimeMono time_mono, std::chrono::nanoseconds dur) {
-  return time_mono.add(dur);
-}
-
-A0_STATIC_INLINE
-TimeMono operator-(TimeMono time_mono, std::chrono::nanoseconds dur) {
-  return time_mono + (-dur);
-}
-
-A0_STATIC_INLINE
-bool operator<(TimeMono lhs, TimeMono rhs) {
-  return lhs.c->ts.tv_sec < rhs.c->ts.tv_sec ||
-         (lhs.c->ts.tv_sec == rhs.c->ts.tv_sec && lhs.c->ts.tv_nsec < rhs.c->ts.tv_nsec);
-}
-
-A0_STATIC_INLINE
-bool operator==(TimeMono lhs, TimeMono rhs) {
-  return lhs.c->ts.tv_sec == rhs.c->ts.tv_sec && lhs.c->ts.tv_nsec == rhs.c->ts.tv_nsec;
-}
-
-A0_STATIC_INLINE
-bool operator!=(TimeMono lhs, TimeMono rhs) { return !(lhs == rhs); }
-
-A0_STATIC_INLINE
-bool operator>(TimeMono lhs, TimeMono rhs) { return rhs < lhs; }
-
-A0_STATIC_INLINE
-bool operator>=(TimeMono lhs, TimeMono rhs) { return !(lhs < rhs); }
-
-A0_STATIC_INLINE
-bool operator<=(TimeMono lhs, TimeMono rhs) { return !(lhs > rhs); }
-
-}  // namespace a0
-
 namespace a0::logger {
 
 class TimePolicy : public Policy::Base {
