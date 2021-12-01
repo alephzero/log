@@ -1,19 +1,28 @@
 import a0
 import datetime
 import enum
-import json
 import glob
+import json
 import os
 import pytest
+import re
 import subprocess
-import sys
 import tempfile
 import time
-import threading
-import types
 
 # TODO(lshamis): Things to test:
 # * unclean shutdown.
+
+# From https://kalnytskyi.com/howto/assert-str-matches-regex-in-pytest/
+class pytest_regex:
+    def __init__(self, pattern, flags=0):
+        self._regex = re.compile(pattern, flags)
+
+    def __eq__(self, actual):
+        return bool(self._regex.match(actual))
+
+    def __repr__(self):
+        return self._regex.pattern
 
 
 class RunLogger:
@@ -94,7 +103,7 @@ def test_policy_save_all(sandbox):
         foo.pub(f"foo_{i}")
         bar.pub(f"bar_{i}")
 
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
@@ -130,7 +139,7 @@ def test_policy_drop_all(sandbox):
         foo.pub(f"foo_{i}")
         bar.pub(f"bar_{i}")
 
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
@@ -182,7 +191,7 @@ def test_policy_count(sandbox):
     time.sleep(0.1)
 
     bar.pub("save_1")
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
@@ -230,7 +239,7 @@ def test_policy_time(sandbox):
             bar.pub("save_0")
         time.sleep(0.25)
 
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
@@ -272,7 +281,7 @@ def test_trigger_rate(sandbox):
         foo.pub(f"foo_{i}")
         time.sleep(0.25)
 
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
@@ -314,8 +323,119 @@ def test_trigger_cron(sandbox):
         foo.pub(f"foo_{i}")
         time.sleep(0.25)
 
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     sandbox.shutdown()
 
     assert len(sandbox.logged_packets()["foo"]) in [3, 4]
+
+
+def test_max_logfile_size(sandbox):
+    foo = a0.Publisher("foo")
+    bar = a0.Publisher("bar")
+
+    sandbox.start(
+        {
+            "savepath": sandbox.savepath.name,
+            "default_max_logfile_size": "2MiB",
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [{"type": "save_all"}],
+                },
+                {
+                    "protocol": "pubsub",
+                    "topic": "bar",
+                    "max_logfile_size": "4MiB",
+                    "policies": [{"type": "save_all"}],
+                },
+            ],
+        }
+    )
+
+    announcements = []
+
+    def on_announce(pkt):
+        announcements.append(json.loads(pkt.payload.decode()))
+
+    s = a0.Subscriber("logger/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+
+    msg = "a" * (1024 * 1024 // 2 - 1024)  # Half a megabyte minus epsilon.
+    for _ in range(16):
+        foo.pub(msg)
+        bar.pub(msg)
+
+    time.sleep(1)
+
+    sandbox.shutdown()
+
+    topic_counter = {"foo.pubsub.a0": 0, "bar.pubsub.a0": 0}
+    for announcement in announcements:
+        assert announcement["action"] in ["opened", "closed"]
+        assert announcement["relative_path"] in ["foo.pubsub.a0", "bar.pubsub.a0"]
+        assert (
+            announcement["read_file"]
+            == f"{os.environ['A0_ROOT']}/{announcement['relative_path']}"
+        )
+        assert announcement["write_file"] == pytest_regex(
+            f"{sandbox.savepath.name}/\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['relative_path']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"
+        )
+        topic_counter[announcement["relative_path"]] += 1
+
+    assert topic_counter == {"foo.pubsub.a0": 8, "bar.pubsub.a0": 4}
+
+
+def test_max_logfile_duration(sandbox):
+    foo = a0.Publisher("foo")
+    bar = a0.Publisher("bar")
+
+    sandbox.start(
+        {
+            "savepath": sandbox.savepath.name,
+            "default_max_logfile_duration": "2s",
+            "rules": [
+                {
+                    "protocol": "pubsub",
+                    "topic": "foo",
+                    "policies": [{"type": "save_all"}],
+                },
+                {
+                    "protocol": "pubsub",
+                    "topic": "bar",
+                    "max_logfile_duration": "4s",
+                    "policies": [{"type": "save_all"}],
+                },
+            ],
+        }
+    )
+
+    announcements = []
+
+    def on_announce(pkt):
+        announcements.append(json.loads(pkt.payload.decode()))
+
+    s = a0.Subscriber("logger/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+
+    msg = "msg"
+    for _ in range(10):
+        foo.pub(msg)
+        bar.pub(msg)
+        time.sleep(0.5)
+
+    sandbox.shutdown()
+
+    topic_counter = {"foo.pubsub.a0": 0, "bar.pubsub.a0": 0}
+    for announcement in announcements:
+        assert announcement["action"] in ["opened", "closed"]
+        assert announcement["relative_path"] in ["foo.pubsub.a0", "bar.pubsub.a0"]
+        assert (
+            announcement["read_file"]
+            == f"{os.environ['A0_ROOT']}/{announcement['relative_path']}"
+        )
+        assert announcement["write_file"] == pytest_regex(
+            f"{sandbox.savepath.name}/\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['relative_path']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"
+        )
+        topic_counter[announcement["relative_path"]] += 1
+
+    assert topic_counter == {"foo.pubsub.a0": 6, "bar.pubsub.a0": 4}

@@ -1,41 +1,54 @@
-#include "a0/logger/rule.hpp"
+#include <a0.h>
+#include <signal.h>
+#include <unistd.h>
 
-#include "a0/logger/triggers/cron.hpp"
-#include "a0/logger/triggers/pubsub.hpp"
-#include "a0/logger/triggers/rate.hpp"
+#include <deque>
+#include <unordered_set>
+#include <vector>
 
 #include "a0/logger/policies/count.hpp"
 #include "a0/logger/policies/drop_all.hpp"
 #include "a0/logger/policies/save_all.hpp"
 #include "a0/logger/policies/time.hpp"
-
-#include <unordered_set>
-
-#include <a0.h>
-#include <deque>
-#include <signal.h>
-#include <vector>
-#include <iostream>
-#include <unistd.h>
+#include "a0/logger/rule.hpp"
+#include "a0/logger/triggers/cron.hpp"
+#include "a0/logger/triggers/pubsub.hpp"
+#include "a0/logger/triggers/rate.hpp"
 
 namespace a0::logger {
 
-static const size_t kMaxLogfileSize = 128 * 1024 * 1024;
+static const uint64_t kDefaultMaxLogfileSize = 128 * 1024 * 1024;
+static const std::chrono::nanoseconds kDefaultMaxLogfileDuration = std::chrono::hours(1);
 
 struct Config {
   std::filesystem::path searchpath;
   std::filesystem::path savepath;
-  std::vector<a0::logger::Rule> rules;
+  std::vector<Rule> rules;
+  uint64_t default_max_logfile_size;
+  std::chrono::nanoseconds default_max_logfile_duration;
 };
 
-static inline
-void from_json(const nlohmann::json& j, Config& c) {
-  c.searchpath = a0::env::root();
+static inline void from_json(const nlohmann::json& j, Config& c) {
+  c.searchpath = env::root();
   if (j.count("searchpath")) {
     j.at("searchpath").get_to(c.searchpath);
   }
   j.at("savepath").get_to(c.savepath);
   j.at("rules").get_to(c.rules);
+
+  c.default_max_logfile_size = kDefaultMaxLogfileSize;
+  if (j.count("default_max_logfile_size")) {
+    c.default_max_logfile_size = parse_filesize(j.at("default_max_logfile_size"));
+  }
+  c.default_max_logfile_duration = kDefaultMaxLogfileDuration;
+  if (j.count("default_max_logfile_duration")) {
+    c.default_max_logfile_duration = parse_duration(j.at("default_max_logfile_duration"));
+  }
+}
+
+void announce(const nlohmann::json& j) {
+  static Publisher p("logger/announce");
+  p.pub(j.dump());
 }
 
 class FileLogger {
@@ -47,13 +60,14 @@ class FileLogger {
   std::vector<Policy> policies;
 
   File write_file;
+  TimeMono write_file_start;
   Transport write_transport;
   Writer writer;
 
   File read_file;
   Reader reader;  // Must be defined last.
 
-public:
+ public:
   FileLogger(Config config, Rule rule, File read_file)
       : config{config}, rule{rule}, read_file{read_file} {
     if (rule.policies.empty()) {
@@ -64,7 +78,12 @@ public:
       policies.emplace_back(policy_cfg, &mtx);
     }
 
+    // TODO(lshamis): This is likely to pick up old messages, from old runs.
     reader = Reader(read_file, A0_INIT_OLDEST, A0_ITER_NEXT, [this](Packet pkt) {
+      if (!has_stamp(pkt)) {
+        // TODO(lshamis): Let someone know?
+        return;
+      }
       std::unique_lock<std::mutex> lk(mtx);
       onpkt(pkt);
     });
@@ -89,7 +108,17 @@ public:
     close_current_file();
   }
 
-private:
+ private:
+  void announce_action(std::string action) {
+    announce({
+        {"action", std::move(action)},
+        {"write_file", write_file.path()},
+        {"read_file", read_file.path()},
+        {"relative_path", std::string(std::filesystem::relative(read_file.path(), config.searchpath))},
+        {"rule", rule.self_description},
+    });
+  }
+
   void onpkt(Packet pkt) {
     for (auto&& p : policies) {
       p.onpkt(pkt);
@@ -136,21 +165,53 @@ private:
       auto tlk = write_transport.lock();
       tlk.resize(tlk.used_space());
       std::filesystem::resize_file(write_file.path(), tlk.used_space());
+      announce_action("closed");
     }
     write_file = File();
   }
 
   void maybe_start_next_file(Packet pkt) {
-    // TODO(lshamis): Should we split on the hour mark?
-    if (!write_file.c || write_would_overflow(pkt)) {
+    if (!write_file.c || write_would_exceed_size(pkt) || write_would_exceed_duration(pkt)) {
       start_next_file(pkt);
+      announce_action("opened");
     }
   }
 
-  bool write_would_overflow(Packet pkt) {
+  bool write_would_exceed_size(Packet pkt) {
     a0_packet_stats_t pkt_stats;
     a0_packet_stats(*pkt.c, &pkt_stats);
     return write_transport.lock().alloc_evicts(pkt_stats.serial_size);
+  }
+
+  bool write_would_exceed_duration(Packet pkt) {
+    return write_file_start + max_file_dur() < monotime_from(pkt);
+  }
+
+  uint64_t max_file_size() {
+    if (rule.max_logfile_size) {
+      return *rule.max_logfile_size;
+    }
+    return config.default_max_logfile_size;
+  }
+
+  std::chrono::nanoseconds max_file_dur() {
+    if (rule.max_logfile_duration) {
+      return *rule.max_logfile_duration;
+    }
+    return config.default_max_logfile_duration;
+  }
+
+  bool has_stamp(Packet pkt) {
+    return pkt.headers().find("a0_time_mono") != pkt.headers().end() &&
+           pkt.headers().find("a0_time_wall") != pkt.headers().end();
+  }
+
+  TimeMono monotime_from(Packet pkt) {
+    return TimeMono::parse(pkt.headers().find("a0_time_mono")->second);
+  }
+
+  TimeWall walltime_from(Packet pkt) {
+    return TimeWall::parse(pkt.headers().find("a0_time_wall")->second);
   }
 
   void start_next_file(Packet pkt) {
@@ -158,15 +219,10 @@ private:
 
     auto rel = std::filesystem::relative(read_file.path(), config.searchpath);
 
-    auto timestamp = a0::TimeWall::now();
-
-    auto time_iter = pkt.headers().find("a0_time_wall");
-    if (time_iter != pkt.headers().end()) {
-      timestamp = a0::TimeWall::parse(time_iter->second);
-    }
+    auto walltime = walltime_from(pkt);
 
     struct tm now_tm;
-    gmtime_r(&timestamp.c->ts.tv_sec, &now_tm);
+    gmtime_r(&walltime.c->ts.tv_sec, &now_tm);
 
     char date_str[11];
     strftime(&date_str[0], 11, "%Y/%m/%d", &now_tm);
@@ -174,13 +230,15 @@ private:
 
     std::string dst = config.savepath / std::string(date_str) / rel;
     dst += "@";
-    dst += timestamp.to_string();
+    dst += walltime.to_string();
     dst += ".a0";
 
     auto file_opts = File::Options::DEFAULT;
-    file_opts.create_options.size = kMaxLogfileSize;
+    file_opts.create_options.size = max_file_size();
     file_opts.open_options.arena_mode = A0_ARENA_MODE_EXCLUSIVE;
+    // TODO(lshamis): Check whether the file already exists.
     write_file = File(dst, file_opts);
+    write_file_start = monotime_from(pkt);
     write_transport = Transport(write_file);
     writer = Writer(write_file);
   }
@@ -204,8 +262,9 @@ class Logger {
     }
   }
 
-public:
-  Logger(Config config_) : config{std::move(config_)} {
+ public:
+  Logger(Config config_)
+      : config{std::move(config_)} {
     for (auto&& rule : config.rules) {
       auto watch_path = config.searchpath / rule.relative_watch_path();
       watchers.emplace_back(watch_path, [this](const std::string& filepath) {
