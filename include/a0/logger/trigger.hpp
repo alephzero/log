@@ -1,14 +1,15 @@
 #pragma once
 
 #include <a0.h>
+#include <nlohmann/json.hpp>
+
 #include <functional>
 #include <memory>
-#include <nlohmann/json.hpp>
 
 namespace a0::logger {
 
 class Trigger final {
-public:
+ public:
   struct Config {
     std::string type;
     nlohmann::json args;
@@ -34,7 +35,7 @@ public:
     base = registrar()->at(config.type)(config.args, notify);
   }
 
-private:
+ private:
   std::unique_ptr<Base> base;
 };
 
@@ -47,4 +48,4 @@ void from_json(const nlohmann::json& j, Trigger::Config& t) {
 }  // namespace a0::logger
 
 #define REGISTER_TRIGGER(key, clz) \
-  static bool _ ## clz ## __ ## key = a0::logger::Trigger::register_(#key, [](nlohmann::json args, a0::logger::Trigger::Notify notify) { return std::make_unique<clz>(args, notify); });
+  static bool _##clz##__##key = a0::logger::Trigger::register_(#key, [](nlohmann::json args, a0::logger::Trigger::Notify notify) { return std::make_unique<clz>(args, notify); });

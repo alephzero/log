@@ -9,6 +9,6 @@ RUN python3 -m pip install -U \
     setuptools \
     pytest
 
-COPY --from=alephzero/log /logger.bin /
+COPY --from=alephzero/log:cov /logger.bin /
 COPY ./test /test
 ENTRYPOINT ["python3", "-m", "pytest", "-vvv", "/test/test_logger.py"]

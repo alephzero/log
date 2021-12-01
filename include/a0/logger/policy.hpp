@@ -1,23 +1,23 @@
 #pragma once
 
 #include <a0.h>
-#include <functional>
-#include <memory>
 #include <nlohmann/json.hpp>
 
-#include "a0/logger/trigger.hpp"
+#include <functional>
+#include <memory>
+
 #include "a0/logger/trigger.hpp"
 
 namespace a0::logger {
 
 enum class SaveDecision {
-    SAVE,
-    DROP,
-    DEFER,
+  SAVE,
+  DROP,
+  DEFER,
 };
 
 class Policy final {
-public:
+ public:
   struct Config {
     std::string type;
     nlohmann::json args;
@@ -60,7 +60,7 @@ public:
   void ontrigger() { base->ontrigger(); }
   SaveDecision should_save(Packet pkt) { return base->should_save(pkt); }
 
-private:
+ private:
   std::unique_ptr<Base> base;
   std::vector<Trigger> triggers;
 };
@@ -79,4 +79,4 @@ void from_json(const nlohmann::json& j, Policy::Config& t) {
 }  // namespace a0::logger
 
 #define REGISTER_POLICY(key, clz) \
-  static bool _ ## clz ## __ ## key = a0::logger::Policy::register_(#key, [](nlohmann::json args) { return std::make_unique<clz>(args); });
+  static bool _##clz##__##key = a0::logger::Policy::register_(#key, [](nlohmann::json args) { return std::make_unique<clz>(args); });
