@@ -359,7 +359,7 @@ def test_max_logfile_size(sandbox):
     def on_announce(pkt):
         announcements.append(json.loads(pkt.payload.decode()))
 
-    s = a0.Subscriber("logger/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+    s = a0.Subscriber("test/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
 
     msg = "a" * (1024 * 1024 // 2 - 1024)  # Half a megabyte minus epsilon.
     for _ in range(16):
@@ -415,7 +415,7 @@ def test_max_logfile_duration(sandbox):
     def on_announce(pkt):
         announcements.append(json.loads(pkt.payload.decode()))
 
-    s = a0.Subscriber("logger/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+    s = a0.Subscriber("test/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
 
     msg = "msg"
     for _ in range(10):

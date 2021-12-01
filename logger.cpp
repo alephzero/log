@@ -47,7 +47,7 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
 }
 
 void announce(const nlohmann::json& j) {
-  static Publisher p("logger/announce");
+  static Publisher p(std::string(env::topic()) + "/announce");
   p.pub(j.dump());
 }
 
