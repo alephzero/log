@@ -72,8 +72,8 @@ class RunLogger:
 
             pkts[key] = []
             reader = a0.ReaderSync(a0.File(path), a0.INIT_OLDEST, a0.ITER_NEXT)
-            while reader.has_next():
-                pkts[key].append(reader.next().payload.decode())
+            while reader.can_read():
+                pkts[key].append(reader.read().payload.decode())
 
         return pkts
 
