@@ -19,9 +19,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build API
+    - name: Build LOG
       run: docker build -t alephzero/log:cov --build-arg=mode=cov .
-    - name: Build API Test
+    - name: Build LOG Test
       run: docker build -t alephzero/log_test -f test/Dockerfile .
     - name: Run Test
       run: docker run --rm alephzero/log_test
