@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+
+  test:
+    name: Unit Test
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build API
+      run: docker build -t alephzero/log:cov --build-arg=mode=cov .
+    - name: Build API Test
+      run: docker build -t alephzero/log_test -f test/Dockerfile .
+    - name: Run Test
+      run: docker run --rm alephzero/log_test
+    # TODO(lshamis): Add coverage
+    #   run: bash <(curl -s https://codecov.io/bash)
+
+  lint:
+    name: Lint
+
+    runs-on: ubuntu-latest
+    container:
+      image: 'ubuntu:20.04'
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: install deps
+      run: |
+        apt update
+        apt install --no-install-recommends -y clang-format git python3-pip
+        python3 -m pip install -U flake8 yapf
+    - name: flake8
+      run: python3 -m flake8
+    - name: yapf
+      run: python3 -m yapf -d -r .
+    - name: clang-format
+      run: |
+        find . -name '*.[ch]pp' | xargs \
+          clang-format -i --style=file --verbose
+        git --no-pager diff --exit-code
+
+  docker:
+    name: Push Docker
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Log into GHCR
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    - name: Build & Push Latest
+      if: github.ref == 'refs/heads/main'
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        file: ./Dockerfile
+        tags: ghcr.io/alephzero/log:latest
+    - name: Build & Push Tag
+      if: startsWith(github.ref, 'refs/tags')
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        file: ./Dockerfile
+        tags: ghcr.io/alephzero/log:${{ steps.tagname.outputs.tag }}
