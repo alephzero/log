@@ -19,6 +19,7 @@ namespace a0::logger {
 
 static const uint64_t kDefaultMaxLogfileSize = 128 * 1024 * 1024;
 static const std::chrono::nanoseconds kDefaultMaxLogfileDuration = std::chrono::hours(1);
+static const std::chrono::nanoseconds kDefaultStartupDelay = std::chrono::seconds(30);
 
 struct Config {
   std::filesystem::path searchpath;
@@ -26,6 +27,7 @@ struct Config {
   std::vector<Rule> rules;
   uint64_t default_max_logfile_size;
   std::chrono::nanoseconds default_max_logfile_duration;
+  TimeMono start_time_mono;
 };
 
 static inline void from_json(const nlohmann::json& j, Config& c) {
@@ -43,6 +45,10 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
   c.default_max_logfile_duration = kDefaultMaxLogfileDuration;
   if (j.count("default_max_logfile_duration")) {
     c.default_max_logfile_duration = parse_duration(j.at("default_max_logfile_duration"));
+  }
+  c.start_time_mono = TimeMono::now() - kDefaultStartupDelay;
+  if (j.count("start_time_mono")) {
+    c.start_time_mono = TimeMono::parse(j.at("start_time_mono"));
   }
 }
 
@@ -68,30 +74,40 @@ class FileLogger {
   Reader reader;  // Must be defined last.
 
  public:
-  FileLogger(Config config, Rule rule, File read_file)
-      : config{config}, rule{rule}, read_file{read_file} {
+  FileLogger(Config config_, Rule rule, File read_file)
+      : config{config_}, rule{rule}, read_file{read_file} {
+    // Don't bother running if there are no policies.
     if (rule.policies.empty()) {
       return;
     }
 
+    // Start all policies.
     for (auto&& policy_cfg : rule.policies) {
       policies.emplace_back(policy_cfg, &mtx);
     }
 
-    // TODO(lshamis): This is likely to pick up old messages, from old runs.
+    // Start the reader. We'll look at all possible packets, and filter internally.
     reader = Reader(read_file, A0_INIT_OLDEST, A0_ITER_NEXT, [this](Packet pkt) {
+      // Drop packets without timestamps. This is likely from a raw Writer.
+      // TODO(lshamis): Let someone know?
       if (!has_stamp(pkt)) {
-        // TODO(lshamis): Let someone know?
         return;
       }
+      // Drop packets from old runs.
+      if (monotime_from(pkt) < config.start_time_mono) {
+        return;
+      }
+      // Process packet.
       std::unique_lock<std::mutex> lk(mtx);
       onpkt(pkt);
     });
   }
 
   ~FileLogger() {
+    // Reader needs to be closed first to avoid modifying the buffer during cleanup.
     reader = {};
 
+    // Process all remaining buffered packets.
     while (!buffer.empty()) {
       auto pkt = buffer.front();
       buffer.pop_front();
@@ -105,6 +121,7 @@ class FileLogger {
       }
     }
 
+    // Truncate and close file.
     close_current_file();
   }
 
@@ -120,12 +137,17 @@ class FileLogger {
   }
 
   void onpkt(Packet pkt) {
+    // Let all policies know about the new packet.
     for (auto&& p : policies) {
       p.onpkt(pkt);
     }
 
+    // Push the packet to the back of the buffer.
     buffer.push_back(pkt);
 
+    // Process the buffer packets from the front.
+    // TODO(lshamis): The buffer is only processed when a packet is published.
+    //                Should it also be processed on a clock?
     while (!buffer.empty()) {
       switch (should_save(buffer.front())) {
         case SaveDecision::SAVE: {
@@ -148,6 +170,9 @@ class FileLogger {
   }
 
   SaveDecision should_save(Packet pkt) {
+    // If any policy wants to save: SAVE.
+    // If no policy wants to save, but might in the future: DEFER.
+    // If all policies want to drop: DROP.
     SaveDecision sd = SaveDecision::DROP;
     for (auto&& p : policies) {
       auto pd = p.should_save(pkt);
@@ -162,12 +187,13 @@ class FileLogger {
 
   void close_current_file() {
     if (write_file.c) {
+      // Resize file to used space.
       auto tlk = write_transport.lock();
       tlk.resize(tlk.used_space());
       std::filesystem::resize_file(write_file.path(), tlk.used_space());
       announce_action("closed");
     }
-    write_file = File();
+    write_file = {};
   }
 
   void maybe_start_next_file(Packet pkt) {
@@ -233,6 +259,10 @@ class FileLogger {
     dst += walltime.to_string();
     dst += ".a0";
 
+    // If the file already exists, we've likely restarted the logger with the same old data.
+    // If we don't remove the file, we'll append identical packets.
+    File::remove(dst);
+
     auto file_opts = File::Options::DEFAULT;
     file_opts.create_options.size = max_file_size();
     file_opts.open_options.arena_mode = A0_ARENA_MODE_EXCLUSIVE;
@@ -254,9 +284,9 @@ class Logger {
 
   void maybe_create_file_logger(const std::string& filepath) {
     for (auto&& rule : config.rules) {
-      auto path_glob = a0::PathGlob(config.searchpath / rule.relative_watch_path());
+      auto path_glob = PathGlob(config.searchpath / rule.relative_watch_path());
       if (path_glob.match(filepath)) {
-        file_loggers.push_back(std::make_unique<FileLogger>(config, rule, a0::File(filepath)));
+        file_loggers.push_back(std::make_unique<FileLogger>(config, rule, File(filepath)));
         return;
       }
     }

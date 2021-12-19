@@ -60,6 +60,22 @@ Available `triggers`:
 * `cron`: fires at regular intervals as defined by the cron `pattern`.
 
 
+## Extra Controls
+
+### Logfile Size
+
+A logfile, by default, is no more than 128MB and no more than 1 hour. Once a limit is reached, the logfile is closed and a new one is created.
+
+To change the logfile duration, a global config `default_max_logfile_duration` can be set. Rules can be set their own `max_logfile_duration`.
+
+Same for `default_max_logfile_size` and `max_logfile_size`.
+
+### Record Start Time
+
+The logger is often started in parallel with other processes, and the launch time, relative to the other processes is variable. By default, the logger will record starting with packets published up to 30s prior to the start of the logger.
+
+`start_time_mono` can be set to a custom mono timestamp to provide an alternate start time.
+
 <details>
 <summary><b>Over-Complicated Example</b></summary>
 
