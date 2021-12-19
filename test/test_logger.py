@@ -16,6 +16,7 @@ import time
 
 # From https://kalnytskyi.com/howto/assert-str-matches-regex-in-pytest/
 class pytest_regex:
+
     def __init__(self, pattern, flags=0):
         self._regex = re.compile(pattern, flags)
 
@@ -27,6 +28,7 @@ class pytest_regex:
 
 
 class RunLogger:
+
     class State(enum.Enum):
         DEAD = 0
         CREATED = 1
@@ -93,16 +95,14 @@ def test_policy_save_all(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
-        "rules": [
-            {
-                "protocol": "pubsub",
-                "topic": "*",
-                "policies": [{
-                    "type": "save_all"
-                }],
-            },
-        ],
+            sandbox.savepath.name,
+        "rules": [{
+            "protocol": "pubsub",
+            "topic": "*",
+            "policies": [{
+                "type": "save_all"
+            }],
+        }],
     })
 
     for i in range(10):
@@ -125,7 +125,7 @@ def test_policy_drop_all(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "rules": [
             {
                 "protocol": "pubsub",
@@ -161,15 +161,14 @@ def test_policy_count(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "rules": [{
             "protocol":
-            "pubsub",
+                "pubsub",
             "topic":
-            "foo",
+                "foo",
             "policies": [{
-                "type":
-                "count",
+                "type": "count",
                 "args": {
                     "save_prev": 2,
                     "save_next": 1,
@@ -186,14 +185,14 @@ def test_policy_count(sandbox):
 
     for i in range(10):
         foo.pub(f"foo_{i}")
-    time.sleep(0.1)
+    time.sleep(0.5)
 
     bar.pub("save_0")
-    time.sleep(0.1)
+    time.sleep(0.5)
 
     for i in range(10, 20):
         foo.pub(f"foo_{i}")
-    time.sleep(0.1)
+    time.sleep(0.5)
 
     bar.pub("save_1")
     time.sleep(0.5)
@@ -211,15 +210,14 @@ def test_policy_time(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "rules": [{
             "protocol":
-            "pubsub",
+                "pubsub",
             "topic":
-            "foo",
+                "foo",
             "policies": [{
-                "type":
-                "time",
+                "type": "time",
                 "args": {
                     "save_prev": "2s",
                     "save_next": "500ms",
@@ -254,12 +252,12 @@ def test_trigger_rate(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "rules": [{
             "protocol":
-            "pubsub",
+                "pubsub",
             "topic":
-            "foo",
+                "foo",
             "policies": [{
                 "type": "count",
                 "args": {
@@ -291,15 +289,15 @@ def test_trigger_cron(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "rules": [{
             "protocol":
-            "pubsub",
+                "pubsub",
             "topic":
-            "foo",
+                "foo",
             "policies": [{
                 "type":
-                "count",
+                    "count",
                 "args": {
                     "save_next": 1,
                 },
@@ -330,9 +328,9 @@ def test_max_logfile_size(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "default_max_logfile_size":
-        "2MiB",
+            "2MiB",
         "rules": [
             {
                 "protocol": "pubsub",
@@ -391,9 +389,9 @@ def test_max_logfile_duration(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "default_max_logfile_duration":
-        "2s",
+            "2s",
         "rules": [
             {
                 "protocol": "pubsub",
@@ -451,18 +449,16 @@ def test_start_time_mono(sandbox):
 
     sandbox.start({
         "savepath":
-        sandbox.savepath.name,
+            sandbox.savepath.name,
         "start_time_mono":
-        str(a0.TimeMono.now()),
-        "rules": [
-            {
-                "protocol": "pubsub",
-                "topic": "foo",
-                "policies": [{
-                    "type": "save_all"
-                }],
-            },
-        ],
+            str(a0.TimeMono.now()),
+        "rules": [{
+            "protocol": "pubsub",
+            "topic": "foo",
+            "policies": [{
+                "type": "save_all"
+            }],
+        }],
     })
 
     foo.pub("msg 1")
