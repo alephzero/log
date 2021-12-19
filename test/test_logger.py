@@ -443,3 +443,30 @@ def test_max_logfile_duration(sandbox):
         topic_counter[announcement["relative_path"]] += 1
 
     assert topic_counter == {"foo.pubsub.a0": 6, "bar.pubsub.a0": 4}
+
+
+def test_start_time_mono(sandbox):
+    foo = a0.Publisher("foo")
+    foo.pub("msg 0")
+
+    sandbox.start({
+        "savepath":
+        sandbox.savepath.name,
+        "start_time_mono":
+        str(a0.TimeMono.now()),
+        "rules": [
+            {
+                "protocol": "pubsub",
+                "topic": "foo",
+                "policies": [{
+                    "type": "save_all"
+                }],
+            },
+        ],
+    })
+
+    foo.pub("msg 1")
+    time.sleep(0.5)
+
+    sandbox.shutdown()
+    assert sandbox.logged_packets()["foo"] == ["msg 1"]
