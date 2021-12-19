@@ -147,7 +147,7 @@ class FileLogger {
 
     // Process the buffer packets from the front.
     // TODO(lshamis): The buffer is only processed when a packet is published.
-    //                Should it also be published on a clock?
+    //                Should it also be processed on a clock?
     while (!buffer.empty()) {
       switch (should_save(buffer.front())) {
         case SaveDecision::SAVE: {
