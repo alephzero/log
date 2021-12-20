@@ -32,6 +32,9 @@ class Trigger final {
   }
 
   Trigger(Config config, Notify notify) {
+    if (!registrar()->count(config.type)) {
+      throw std::invalid_argument("Unknown trigger: " + config.type);
+    }
     base = registrar()->at(config.type)(config.args, notify);
   }
 

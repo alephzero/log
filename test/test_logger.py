@@ -232,18 +232,16 @@ def test_policy_time(sandbox):
         }],
     })
 
-    for i in range(40):
+    for i in range(20):
         foo.pub(f"foo_{i}")
-        if i == 20:
-            bar.pub("save_0")
-        time.sleep(0.25)
-
-    time.sleep(0.5)
+        if i == 10:
+            bar.pub("save")
+        time.sleep(0.24)
 
     sandbox.shutdown()
 
     assert sandbox.logged_packets() == {
-        "foo": [f"foo_{i}" for i in range(13, 23)]
+        "foo": [f"foo_{i}" for i in range(2, 13)]
     }
 
 

@@ -23,6 +23,7 @@ static inline std::string replace(std::string str, const std::string& search, co
 
 struct Rule {
   enum Protocol {
+    UNKNOWN,
     FILE,
     CFG,
     LOG,
@@ -54,6 +55,7 @@ struct Rule {
 };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(Rule::Protocol, {
+                                                 {Rule::Protocol::UNKNOWN, ""},
                                                  {Rule::Protocol::FILE, "file"},
                                                  {Rule::Protocol::CFG, "cfg"},
                                                  {Rule::Protocol::LOG, "log"},
@@ -66,6 +68,9 @@ static inline void from_json(const nlohmann::json& j, Rule& r) {
   r.self_description = j;
 
   j.at("protocol").get_to(r.protocol);
+  if (r.protocol == Rule::Protocol::UNKNOWN) {
+    throw std::invalid_argument("Unknown protocol: " + j.at("protocol").dump());
+  }
   j.at("topic").get_to(r.topic);
   j.at("policies").get_to(r.policies);
   if (j.count("max_logfile_size")) {
