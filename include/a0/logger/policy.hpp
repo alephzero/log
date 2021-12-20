@@ -45,6 +45,9 @@ class Policy final {
   }
 
   Policy(Config config, std::mutex* mtx) {
+    if (!registrar()->count(config.type)) {
+      throw std::invalid_argument("Unknown policy: " + config.type);
+    }
     base = registrar()->at(config.type)(config.args);
 
     for (auto&& tcfg : config.triggers) {

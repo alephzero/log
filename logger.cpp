@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <deque>
+#include <filesystem>
 #include <unordered_set>
 #include <vector>
 
@@ -33,9 +34,9 @@ struct Config {
 static inline void from_json(const nlohmann::json& j, Config& c) {
   c.searchpath = env::root();
   if (j.count("searchpath")) {
-    j.at("searchpath").get_to(c.searchpath);
+    c.searchpath = j.at("searchpath").get<std::string>();
   }
-  j.at("savepath").get_to(c.savepath);
+  c.savepath = j.at("savepath").get<std::string>();
   j.at("rules").get_to(c.rules);
 
   c.default_max_logfile_size = kDefaultMaxLogfileSize;
@@ -324,4 +325,5 @@ int main() {
 
   int signo;
   sigwait(&sigset, &signo);
+  printf("Caught signal %d. Shutting down...\n", signo);
 }

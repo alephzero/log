@@ -16,7 +16,7 @@ RUN mkdir -p /alephzero && \
 
 RUN mkdir -p /nlohmann && \
     cd /nlohmann && \
-    wget https://github.com/nlohmann/json/releases/download/v3.9.1/json.hpp
+    wget https://github.com/nlohmann/json/releases/download/v3.10.3/json.hpp
 
 RUN mkdir -p /mariusbancila && \
     cd /mariusbancila && \
