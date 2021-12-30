@@ -88,7 +88,7 @@ class FileLogger {
     }
 
     // Start the reader. We'll look at all possible packets, and filter internally.
-    reader = Reader(read_file, A0_INIT_OLDEST, A0_ITER_NEXT, [this](Packet pkt) {
+    reader = Reader(read_file, INIT_OLDEST, [this](Packet pkt) {
       // Drop packets without timestamps. This is likely from a raw Writer.
       // TODO(lshamis): Let someone know?
       if (!has_stamp(pkt)) {
