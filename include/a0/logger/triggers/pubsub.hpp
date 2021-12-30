@@ -17,8 +17,7 @@ class PubsubTrigger : public Trigger::Base {
 
     sub = Subscriber(
         args["topic"].get<std::string>(),
-        A0_INIT_AWAIT_NEW,
-        A0_ITER_NEWEST,
+        ITER_NEWEST,
         [notify](Packet) { notify(); });
   }
 };
