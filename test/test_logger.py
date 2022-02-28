@@ -73,7 +73,7 @@ class RunLogger:
             key = path.split("/")[-1].split(".")[0]
 
             pkts[key] = []
-            reader = a0.ReaderSync(a0.File(path), a0.INIT_OLDEST, a0.ITER_NEXT)
+            reader = a0.ReaderSync(a0.File(path), a0.INIT_OLDEST)
             while reader.can_read():
                 pkts[key].append(reader.read().payload.decode())
 
@@ -354,7 +354,7 @@ def test_max_logfile_size(sandbox):
         announcements.append(json.loads(pkt.payload.decode()))
 
     s = a0.Subscriber(  # noqa:F841
-        "test/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+        "test/announce", a0.INIT_OLDEST, on_announce)
 
     msg = "a" * (1024 * 1024 // 2 - 1024)  # Half a megabyte minus epsilon.
     for _ in range(16):
@@ -368,15 +368,17 @@ def test_max_logfile_size(sandbox):
     topic_counter = {"foo.pubsub.a0": 0, "bar.pubsub.a0": 0}
     for announcement in announcements:
         assert announcement["action"] in ["opened", "closed"]
-        assert announcement["relative_path"] in [
+        assert announcement["read_relpath"] in [
             "foo.pubsub.a0", "bar.pubsub.a0"
         ]
-        assert (announcement["read_file"] ==
-                f"{os.environ['A0_ROOT']}/{announcement['relative_path']}")
-        assert announcement["write_file"] == pytest_regex(
-            f"{sandbox.savepath.name}/\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['relative_path']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"  # noqa: E501
+        assert (announcement["read_abspath"] ==
+                f"{os.environ['A0_ROOT']}/{announcement['read_relpath']}")
+        assert announcement["write_relpath"] == pytest_regex(
+            f"\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['read_relpath']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"  # noqa: E501
         )
-        topic_counter[announcement["relative_path"]] += 1
+        assert announcement["write_abspath"] == pytest_regex(
+            f"{sandbox.savepath.name}/{announcement['write_relpath']}")
+        topic_counter[announcement["read_relpath"]] += 1
 
     assert topic_counter == {"foo.pubsub.a0": 8, "bar.pubsub.a0": 4}
 
@@ -415,7 +417,7 @@ def test_max_logfile_duration(sandbox):
         announcements.append(json.loads(pkt.payload.decode()))
 
     s = a0.Subscriber(  # noqa: F841
-        "test/announce", a0.INIT_OLDEST, a0.ITER_NEXT, on_announce)
+        "test/announce", a0.INIT_OLDEST, on_announce)
 
     msg = "msg"
     for _ in range(10):
@@ -428,15 +430,17 @@ def test_max_logfile_duration(sandbox):
     topic_counter = {"foo.pubsub.a0": 0, "bar.pubsub.a0": 0}
     for announcement in announcements:
         assert announcement["action"] in ["opened", "closed"]
-        assert announcement["relative_path"] in [
+        assert announcement["read_relpath"] in [
             "foo.pubsub.a0", "bar.pubsub.a0"
         ]
-        assert (announcement["read_file"] ==
-                f"{os.environ['A0_ROOT']}/{announcement['relative_path']}")
-        assert announcement["write_file"] == pytest_regex(
-            f"{sandbox.savepath.name}/\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['relative_path']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"  # noqa: E501
+        assert (announcement["read_abspath"] ==
+                f"{os.environ['A0_ROOT']}/{announcement['read_relpath']}")
+        assert announcement["write_relpath"] == pytest_regex(
+            f"\\d{{4}}/\\d{{2}}/\\d{{2}}/{announcement['read_relpath']}@\\d{{4}}-\\d{{2}}-\\d{{2}}T\\d{{2}}:\\d{{2}}:\\d{{2}}.\\d{{9}}-\\d{{2}}:\\d{{2}}.a0"  # noqa: E501
         )
-        topic_counter[announcement["relative_path"]] += 1
+        assert announcement["write_abspath"] == pytest_regex(
+            f"{sandbox.savepath.name}/{announcement['write_relpath']}")
+        topic_counter[announcement["read_relpath"]] += 1
 
     assert topic_counter == {"foo.pubsub.a0": 6, "bar.pubsub.a0": 4}
 

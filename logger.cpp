@@ -130,9 +130,10 @@ class FileLogger {
   void announce_action(std::string action) {
     announce({
         {"action", std::move(action)},
-        {"write_file", write_file.path()},
-        {"read_file", read_file.path()},
-        {"relative_path", std::string(std::filesystem::relative(read_file.path(), config.searchpath))},
+        {"write_abspath", write_file.path()},
+        {"write_relpath", std::string(std::filesystem::relative(write_file.path(), config.savepath))},
+        {"read_abspath", read_file.path()},
+        {"read_relpath", std::string(std::filesystem::relative(read_file.path(), config.searchpath))},
         {"rule", rule.self_description},
     });
   }
