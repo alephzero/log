@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "a0/logger/policy.hpp"
 #include "a0/logger/unit_parse.hpp"

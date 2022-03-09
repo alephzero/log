@@ -1,0 +1,6 @@
+[submodule "third_party/alephzero/alephzero"]
+	path = third_party/alephzero/alephzero
+	url = http://github.com/alephzero/alephzero.git
+[submodule "third_party/mariusbancila/croncpp"]
+	path = third_party/mariusbancila/croncpp
+	url = https://github.com/mariusbancila/croncpp.git
