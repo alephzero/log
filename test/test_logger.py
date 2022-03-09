@@ -47,7 +47,7 @@ class RunLogger:
         self.logger_proc = subprocess.Popen(
             [
                 "valgrind", "--leak-check=full", "--error-exitcode=125",
-                "/logger.bin"
+                "bin/log"
             ],
             env=os.environ.copy(),
         )

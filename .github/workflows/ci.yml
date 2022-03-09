@@ -16,17 +16,33 @@ jobs:
     name: Unit Test
 
     runs-on: ubuntu-latest
+    container:
+      image: 'ubuntu:20.04'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v1
+      with:
+        submodules: recursive
+    - name: Install Deps
+      run: |
+        apt update
+        apt install --no-install-recommends -y \
+            make \
+            g++ \
+            git \
+            python3-dev \
+            python3-pip \
+            valgrind
+        python3 -m pip install -U \
+            alephzero \
+            pip \
+            wheel \
+            setuptools \
+            pytest
     - name: Build LOG
-      run: docker build -t alephzero/log:cov --build-arg=mode=cov .
-    - name: Build LOG Test
-      run: docker build -t alephzero/log_test -f test/Dockerfile .
+      run: make bin/log -j DEBUG=1
     - name: Run Test
-      run: docker run --rm alephzero/log_test
-    # TODO(lshamis): Add coverage
-    #   run: bash <(curl -s https://codecov.io/bash)
+      run: python3 -m pytest test/test_logger.py
 
   lint:
     name: Lint
@@ -59,6 +75,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+      with:
+        submodules: recursive
     - name: Log into GHCR
       uses: docker/login-action@v1
       with:
