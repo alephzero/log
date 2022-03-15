@@ -272,9 +272,10 @@ class FileLogger {
     date_str[10] = 0;
 
     write_complete_path = config.savepath / std::string(date_str) / std::filesystem::relative(read_file.path(), config.searchpath);
-    write_complete_path = write_complete_path.replace_filename(std::string(write_complete_path.filename()) + "@" + walltime.to_string() + ".a0");
+    write_complete_path.replace_filename(std::string(write_complete_path.filename()) + "@" + walltime.to_string() + ".a0");
+
     write_progress_path = write_complete_path;
-    write_progress_path = write_progress_path.replace_filename("." + std::string(write_progress_path.filename()));
+    write_progress_path.replace_filename("." + std::string(write_progress_path.filename()));
 
     // If the file already exists, we've likely restarted the logger with the same old data.
     // If we don't remove the file, we'll append identical packets.
