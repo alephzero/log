@@ -66,6 +66,8 @@ class FileLogger {
   std::deque<Packet> buffer;
   std::vector<Policy> policies;
 
+  std::filesystem::path write_progress_path;
+  std::filesystem::path write_complete_path;
   File write_file;
   TimeMono write_file_start;
   Transport write_transport;
@@ -127,11 +129,12 @@ class FileLogger {
   }
 
  private:
-  void announce_action(std::string action) {
+  void announce_action(std::string action, std::string details = "") {
     announce({
         {"action", std::move(action)},
-        {"write_abspath", write_file.path()},
-        {"write_relpath", std::string(std::filesystem::relative(write_file.path(), config.savepath))},
+        {"details", std::move(details)},
+        {"write_abspath", write_complete_path},
+        {"write_relpath", std::string(std::filesystem::relative(write_complete_path, config.savepath))},
         {"read_abspath", read_file.path()},
         {"read_relpath", std::string(std::filesystem::relative(read_file.path(), config.searchpath))},
         {"rule", rule.self_description},
@@ -192,7 +195,21 @@ class FileLogger {
       // Resize file to used space.
       auto tlk = write_transport.lock();
       tlk.resize(tlk.used_space());
-      std::filesystem::resize_file(write_file.path(), tlk.used_space());
+      write_file = {};
+
+      std::error_code ec;
+      std::filesystem::resize_file(write_progress_path, tlk.used_space(), ec);
+      if (ec) {
+        announce_action("error", ec.message());
+        return;
+      }
+
+      std::filesystem::rename(write_progress_path, write_complete_path, ec);
+      if (ec) {
+        announce_action("error", ec.message());
+        return;
+      }
+
       announce_action("closed");
     }
     write_file = {};
@@ -245,8 +262,6 @@ class FileLogger {
   void start_next_file(Packet pkt) {
     close_current_file();
 
-    auto rel = std::filesystem::relative(read_file.path(), config.searchpath);
-
     auto walltime = walltime_from(pkt);
 
     struct tm now_tm;
@@ -256,20 +271,21 @@ class FileLogger {
     strftime(&date_str[0], 11, "%Y/%m/%d", &now_tm);
     date_str[10] = 0;
 
-    std::string dst = config.savepath / std::string(date_str) / rel;
-    dst += "@";
-    dst += walltime.to_string();
-    dst += ".a0";
+    write_complete_path = config.savepath / std::string(date_str) / std::filesystem::relative(read_file.path(), config.searchpath);
+    write_complete_path.replace_filename(std::string(write_complete_path.filename()) + "@" + walltime.to_string() + ".a0");
+
+    write_progress_path = write_complete_path;
+    write_progress_path.replace_filename("." + std::string(write_progress_path.filename()));
 
     // If the file already exists, we've likely restarted the logger with the same old data.
     // If we don't remove the file, we'll append identical packets.
-    File::remove(dst);
+    File::remove(std::string(write_progress_path));
 
     auto file_opts = File::Options::DEFAULT;
     file_opts.create_options.size = max_file_size();
     file_opts.open_options.arena_mode = A0_ARENA_MODE_EXCLUSIVE;
     // TODO(lshamis): Check whether the file already exists.
-    write_file = File(dst, file_opts);
+    write_file = File(std::string(write_progress_path), file_opts);
     write_file_start = monotime_from(pkt);
     write_transport = Transport(write_file);
     writer = Writer(write_file);
