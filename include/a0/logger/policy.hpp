@@ -25,12 +25,13 @@ class Policy final {
     std::string trigger_control_topic;
   };
 
-  struct Base {
+  struct Base : Trigger::EventCallbacks {
     virtual ~Base() = default;
     virtual void onpkt(Packet) {}
     virtual void ondrop(Packet) {}
-    // ontrigger will be called on separate threads than the other methods.
     virtual void ontrigger() {}
+    virtual void onpause() {}
+    virtual void onresume() {}
     virtual SaveDecision should_save(Packet) = 0;
   };
 
@@ -66,6 +67,8 @@ class Policy final {
   void onpkt(Packet pkt) { base->onpkt(pkt); }
   void ondrop(Packet pkt) { base->ondrop(pkt); }
   void ontrigger() { base->ontrigger(); }
+  void onpause() { base->onpause(); }
+  void onresume() { base->onresume(); }
   SaveDecision should_save(Packet pkt) { return base->should_save(pkt); }
 
  private:

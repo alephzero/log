@@ -60,8 +60,39 @@ class Trigger final {
     }
   };
 
-  using Notify = std::function<void()>;
-  using Factory = std::function<std::unique_ptr<Base>(nlohmann::json, Notify)>;
+  struct EventCallbacks {
+    virtual ~EventCallbacks() = default;
+    // ontrigger will be called on separate threads than the other methods.
+    virtual void ontrigger() {}
+    virtual void onpause() {}
+    virtual void onresume() {}
+  };
+
+  class ControlledEventCallbacks final {
+    std::atomic<bool> enabled{true};
+    std::shared_ptr<EventCallbacks> callbacks;
+
+   public:
+    ControlledEventCallbacks(std::shared_ptr<EventCallbacks> callbacks) : callbacks{callbacks} {}
+
+    void ontrigger() override {
+      if (enabled) {
+        callbacks->ontrigger();
+      }
+    }
+
+    void onpause() override {
+      enabled = false;
+      callbacks->onpause();
+    }
+
+    void onresume() override {
+      callbacks->onresume();
+      enabled = true;
+    }
+  };
+
+  using Factory = std::function<std::unique_ptr<Base>(nlohmann::json, std::shared_ptr<EventCallbacks>)>;
 
   static std::map<std::string, Factory>* registrar() {
     static std::map<std::string, Factory> r;
@@ -72,7 +103,7 @@ class Trigger final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Trigger(Config config, std::vector<Controller*> controllers,  Notify notify) {
+  Trigger(Config config, std::vector<Controller*> controllers, std::shared_ptr<EventCallbacks> callbacks) {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown trigger: " + config.type);
     }
@@ -85,13 +116,7 @@ class Trigger final {
       Controller::get(config.control_topic)->connect(enabled);
     }
 
-    Notify controlled_notify = [notify, enabled]() {
-      if (*enabled) {
-        notify();
-      }
-    };
-
-    base = registrar()->at(config.type)(config.args, controlled_notify);
+    base = registrar()->at(config.type)(config.args, std::make_shared<ControlledEventCallbacks>(callbacks));
   }
 
  private:
