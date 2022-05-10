@@ -22,6 +22,7 @@ class Policy final {
     std::string type;
     nlohmann::json args;
     std::vector<Trigger::Config> triggers;
+    std::string trigger_control_topic;
   };
 
   struct Base {
@@ -44,14 +45,18 @@ class Policy final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Policy(Config config, std::mutex* mtx) {
+  Policy(Config config, std::vector<Trigger::Controller*> trigger_controllers, std::mutex* mtx) {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown policy: " + config.type);
     }
     base = registrar()->at(config.type)(config.args);
 
+    if (!config.trigger_control_topic.empty()) {
+      trigger_controllers.push_back(Trigger::Controller::get(config.trigger_control_topic));
+    }
+
     for (auto&& tcfg : config.triggers) {
-      triggers.emplace_back(tcfg, [this, mtx]() {
+      triggers.emplace_back(tcfg, trigger_controllers, [this, mtx]() {
         std::unique_lock<std::mutex> lk(*mtx);
         base->ontrigger();
       });
@@ -76,6 +81,9 @@ void from_json(const nlohmann::json& j, Policy::Config& t) {
   }
   if (j.count("triggers")) {
     j.at("triggers").get_to(t.triggers);
+  }
+  if (j.count("trigger_control_topic")) {
+    j.at("trigger_control_topic").get_to(t.trigger_control_topic);
   }
 }
 

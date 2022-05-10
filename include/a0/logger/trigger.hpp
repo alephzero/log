@@ -13,10 +13,51 @@ class Trigger final {
   struct Config {
     std::string type;
     nlohmann::json args;
+    std::string control_topic;
   };
 
   struct Base {
     virtual ~Base() = default;
+  };
+
+  class Controller {
+    std::mutex mtx;
+    std::vector<std::shared_ptr<bool>> gates;
+    Subscriber sub;
+
+   public:
+    Controller(std::string topic) : sub(topic, [this, topic](Packet pkt) {
+      if (pkt.payload() != "on" && pkt.payload() != "off") {
+        fprintf(
+            stderr,
+            "Invalid trigger control message.\ntopic=[%s]\bmessage=[%s]\nExpect one of {\"on\", \"off\"}\n",
+            topic.c_str(),
+            pkt.payload().data());
+        return;
+      }
+
+      bool val = (pkt.payload() == "on");
+
+      std::unique_lock<std::mutex> lk{mtx};
+      for (auto& gate : gates) {
+        *gate = val;
+      }
+    }) {}
+
+    static Controller* get(const std::string& topic) {
+      static std::mutex mtx;
+      static std::unordered_map<std::string, std::unique_ptr<Controller>> global_map;
+      std::unique_lock<std::mutex> lk{mtx};
+      if (!global_map.count(topic)) {
+        global_map[topic] = std::make_unique<Controller>(topic);
+      }
+      return global_map[topic].get();
+    }
+
+    void connect(std::shared_ptr<bool> gate) {
+      std::unique_lock<std::mutex> lk{mtx};
+      gates.push_back(std::move(gate));
+    }
   };
 
   using Notify = std::function<void()>;
@@ -31,21 +72,40 @@ class Trigger final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Trigger(Config config, Notify notify) {
+  Trigger(Config config, std::vector<Controller*> controllers,  Notify notify) {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown trigger: " + config.type);
     }
-    base = registrar()->at(config.type)(config.args, notify);
+
+    auto enabled = std::make_shared<bool>(true);
+    for (auto&& controller : controllers) {
+      controller->connect(enabled);
+    }
+    if (!config.control_topic.empty()) {
+      Controller::get(config.control_topic)->connect(enabled);
+    }
+
+    Notify controlled_notify = [notify, enabled]() {
+      if (*enabled) {
+        notify();
+      }
+    };
+
+    base = registrar()->at(config.type)(config.args, controlled_notify);
   }
 
  private:
   std::unique_ptr<Base> base;
+  std::vector<std::shared_ptr<Controller>> controllers;
 };
 
 A0_STATIC_INLINE
 void from_json(const nlohmann::json& j, Trigger::Config& t) {
   j.at("type").get_to(t.type);
   t.args = j.at("args");
+  if (j.count("control_topic")) {
+    j.at("control_topic").get_to(t.control_topic);
+  }
 }
 
 }  // namespace a0::logger

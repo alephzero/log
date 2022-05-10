@@ -41,6 +41,8 @@ class RunLogger:
     def start(self, cfg):
         assert not self.logger_proc
 
+        log_ready = a0.SubscriberSync("log_ready")
+
         os.environ["A0_TOPIC"] = "test"
         a0.Cfg(a0.env.topic()).write(json.dumps(cfg))
 
@@ -51,7 +53,8 @@ class RunLogger:
             ],
             env=os.environ.copy(),
         )
-        time.sleep(3)
+
+        log_ready.read_blocking(timeout=10)
 
     def shutdown(self):
         if self.logger_proc:
@@ -114,6 +117,7 @@ def test_policy_save_all(sandbox):
     sandbox.shutdown()
 
     assert sandbox.logged_packets() == {
+        "log_ready": ["ready"],
         "foo": [f"foo_{i}" for i in range(10)],
         "bar": [f"bar_{i}" for i in range(10)],
     }
@@ -152,7 +156,10 @@ def test_policy_drop_all(sandbox):
 
     sandbox.shutdown()
 
-    assert sandbox.logged_packets() == {"bar": [f"bar_{i}" for i in range(10)]}
+    assert sandbox.logged_packets() == {
+        "log_ready": ["ready"],
+        "bar": [f"bar_{i}" for i in range(10)],
+    }
 
 
 def test_policy_count(sandbox):
@@ -279,7 +286,7 @@ def test_trigger_rate(sandbox):
 
     sandbox.shutdown()
 
-    assert len(sandbox.logged_packets()["foo"]) in [10, 11]
+    assert 9 <= len(sandbox.logged_packets()["foo"]) <= 11
 
 
 def test_trigger_cron(sandbox):
@@ -468,3 +475,80 @@ def test_start_time_mono(sandbox):
 
     sandbox.shutdown()
     assert sandbox.logged_packets()["foo"] == ["msg 1"]
+
+
+def test_trigger_control(sandbox):
+    foo = a0.Publisher("foo")
+    bar = a0.Publisher("bar")
+    trigger_controls = [
+        a0.Publisher(f"trigger_control_{i}")
+        for i in range(3)
+    ]
+
+    sandbox.start({
+        "savepath":
+            sandbox.savepath.name,
+        "rules": [{
+            "protocol":
+                "pubsub",
+            "topic":
+                "foo",
+            "trigger_control_topic":
+                "trigger_control_0",
+            "policies": [{
+                "type": "count",
+                "args": {
+                    "save_prev": 1,
+                },
+                "trigger_control_topic":
+                    "trigger_control_1",
+                "triggers": [{
+                    "type": "pubsub",
+                    "args": {
+                        "topic": "bar",
+                    },
+                    "control_topic":
+                        "trigger_control_2",
+                }],
+            }],
+        }],
+    })
+
+    foo.pub(f"foo_0")
+    time.sleep(0.5)
+
+    bar.pub("save_0")
+    time.sleep(0.5)
+
+    trigger_controls[0].pub("off")
+    time.sleep(0.5)
+
+    foo.pub(f"foo_1")
+    time.sleep(0.5)
+
+    bar.pub("save_1")
+    time.sleep(0.5)
+
+    trigger_controls[1].pub("off")
+    time.sleep(0.5)
+
+    foo.pub(f"foo_2")
+    time.sleep(0.5)
+
+    bar.pub("save_2")
+    time.sleep(0.5)
+
+    trigger_controls[2].pub("on")
+    time.sleep(0.5)
+
+    foo.pub(f"foo_3")
+    time.sleep(0.5)
+
+    bar.pub("save_3")
+    time.sleep(0.5)
+
+    sandbox.shutdown()
+
+    assert sandbox.logged_packets() == {
+        "foo": ["foo_0", "foo_3"]
+    }

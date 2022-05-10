@@ -26,6 +26,7 @@ struct Config {
   std::filesystem::path searchpath;
   std::filesystem::path savepath;
   std::vector<Rule> rules;
+  std::string trigger_control_topic;
   uint64_t default_max_logfile_size;
   std::chrono::nanoseconds default_max_logfile_duration;
   TimeMono start_time_mono;
@@ -38,6 +39,9 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
   }
   c.savepath = j.at("savepath").get<std::string>();
   j.at("rules").get_to(c.rules);
+  if (j.count("trigger_control_topic")) {
+    c.trigger_control_topic = j.at("trigger_control_topic");
+  }
 
   c.default_max_logfile_size = kDefaultMaxLogfileSize;
   if (j.count("default_max_logfile_size")) {
@@ -51,6 +55,12 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
   if (j.count("start_time_mono")) {
     c.start_time_mono = TimeMono::parse(j.at("start_time_mono"));
   }
+}
+
+static inline std::string_view env(std::string_view key,
+                                   std::string_view default_) {
+  const char* val = std::getenv(key.data());
+  return val ? val : default_;
 }
 
 void announce(const nlohmann::json& j) {
@@ -84,9 +94,15 @@ class FileLogger {
       return;
     }
 
+    // Create trigger controllers.
+    std::vector<Trigger::Controller*> trigger_controllers;
+    if (!rule.trigger_control_topic.empty()) {
+      trigger_controllers.push_back(Trigger::Controller::get(rule.trigger_control_topic));
+    }
+
     // Start all policies.
     for (auto&& policy_cfg : rule.policies) {
-      policies.emplace_back(policy_cfg, &mtx);
+      policies.emplace_back(policy_cfg, trigger_controllers, &mtx);
     }
 
     // Start the reader. We'll look at all possible packets, and filter internally.
@@ -328,9 +344,13 @@ class Logger {
 }  // namespace a0::logger
 
 int main() {
+  auto LOG_READY_TOPIC = std::string(a0::logger::env("LOG_READY_TOPIC", "log_ready"));
+
   a0::Cfg cfg(a0::env::topic());
   auto config = cfg.var<a0::logger::Config>("");
   a0::logger::Logger logger(*config);
+
+  a0::Publisher(LOG_READY_TOPIC).pub("ready");
 
   sigset_t sigset;
   sigemptyset(&sigset);
