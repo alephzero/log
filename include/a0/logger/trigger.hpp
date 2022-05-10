@@ -20,79 +20,60 @@ class Trigger final {
     virtual ~Base() = default;
   };
 
-  class Controller {
-    std::mutex mtx;
-    std::vector<std::shared_ptr<bool>> gates;
-    Subscriber sub;
-
-   public:
-    Controller(std::string topic) : sub(topic, [this, topic](Packet pkt) {
-      if (pkt.payload() != "on" && pkt.payload() != "off") {
-        fprintf(
-            stderr,
-            "Invalid trigger control message.\ntopic=[%s]\bmessage=[%s]\nExpect one of {\"on\", \"off\"}\n",
-            topic.c_str(),
-            pkt.payload().data());
-        return;
-      }
-
-      bool val = (pkt.payload() == "on");
-
-      std::unique_lock<std::mutex> lk{mtx};
-      for (auto& gate : gates) {
-        *gate = val;
-      }
-    }) {}
-
-    static Controller* get(const std::string& topic) {
-      static std::mutex mtx;
-      static std::unordered_map<std::string, std::unique_ptr<Controller>> global_map;
-      std::unique_lock<std::mutex> lk{mtx};
-      if (!global_map.count(topic)) {
-        global_map[topic] = std::make_unique<Controller>(topic);
-      }
-      return global_map[topic].get();
-    }
-
-    void connect(std::shared_ptr<bool> gate) {
-      std::unique_lock<std::mutex> lk{mtx};
-      gates.push_back(std::move(gate));
-    }
-  };
-
-  struct EventCallbacks {
-    virtual ~EventCallbacks() = default;
+  struct Listener {
+    virtual ~Listener() = default;
     // ontrigger will be called on separate threads than the other methods.
     virtual void ontrigger() {}
     virtual void onpause() {}
     virtual void onresume() {}
   };
 
-  class ControlledEventCallbacks final {
-    std::atomic<bool> enabled{true};
-    std::shared_ptr<EventCallbacks> callbacks;
+  class Gate {
+   private:
+    std::mutex mtx;
+    std::vector<Listener*> listeners;
+    Subscriber sub;
 
    public:
-    ControlledEventCallbacks(std::shared_ptr<EventCallbacks> callbacks) : callbacks{callbacks} {}
+    Gate(std::string topic)
+        : sub(topic, [this, topic](Packet pkt) {
+            if (pkt.payload() != "on" && pkt.payload() != "off") {
+              fprintf(
+                  stderr,
+                  "Invalid trigger control message.\ntopic=[%s]\bmessage=[%s]\nExpect one of {\"on\", \"off\"}\n",
+                  topic.c_str(),
+                  pkt.payload().data());
+              return;
+            }
 
-    void ontrigger() override {
-      if (enabled) {
-        callbacks->ontrigger();
+            std::unique_lock<std::mutex> lk{mtx};
+            for (auto* l : listeners) {
+              if (pkt.payload() == "on") {
+                l->onresume();
+              } else {
+                l->onpause();
+              }
+            }
+          }) {}
+
+    static Gate* get(const std::string& topic) {
+      static std::mutex mtx;
+      static std::map<std::string, std::unique_ptr<Gate>> global_map;
+      std::unique_lock<std::mutex> lk{mtx};
+      if (!global_map.count(topic)) {
+        global_map[topic] = std::make_unique<Gate>(topic);
       }
+      return global_map[topic].get();
     }
 
-    void onpause() override {
-      enabled = false;
-      callbacks->onpause();
-    }
-
-    void onresume() override {
-      callbacks->onresume();
-      enabled = true;
+    void add_listener(Listener* l) {
+      std::unique_lock<std::mutex> lk{mtx};
+      listeners.push_back(l);
     }
   };
 
-  using Factory = std::function<std::unique_ptr<Base>(nlohmann::json, std::shared_ptr<EventCallbacks>)>;
+  using Notify = std::function<void()>;
+  using Factory = std::function<std::unique_ptr<Base>(nlohmann::json, Notify)>;
 
   static std::map<std::string, Factory>* registrar() {
     static std::map<std::string, Factory> r;
@@ -103,25 +84,20 @@ class Trigger final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Trigger(Config config, std::vector<Controller*> controllers, std::shared_ptr<EventCallbacks> callbacks) {
+  Trigger(Config config, Listener* listener) {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown trigger: " + config.type);
     }
 
-    auto enabled = std::make_shared<bool>(true);
-    for (auto&& controller : controllers) {
-      controller->connect(enabled);
-    }
     if (!config.control_topic.empty()) {
-      Controller::get(config.control_topic)->connect(enabled);
+      Gate::get(config.control_topic)->add_listener(listener);
     }
 
-    base = registrar()->at(config.type)(config.args, std::make_shared<ControlledEventCallbacks>(callbacks));
+    base = registrar()->at(config.type)(config.args, [listener]() { listener->ontrigger(); });
   }
 
  private:
   std::unique_ptr<Base> base;
-  std::vector<std::shared_ptr<Controller>> controllers;
 };
 
 A0_STATIC_INLINE

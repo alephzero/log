@@ -480,10 +480,7 @@ def test_start_time_mono(sandbox):
 def test_trigger_control(sandbox):
     foo = a0.Publisher("foo")
     bar = a0.Publisher("bar")
-    trigger_controls = [
-        a0.Publisher(f"trigger_control_{i}")
-        for i in range(3)
-    ]
+    trigger_controls = [a0.Publisher(f"trigger_control_{i}") for i in range(3)]
 
     sandbox.start({
         "savepath":
@@ -496,7 +493,8 @@ def test_trigger_control(sandbox):
             "trigger_control_topic":
                 "trigger_control_0",
             "policies": [{
-                "type": "count",
+                "type":
+                    "count",
                 "args": {
                     "save_prev": 1,
                 },
@@ -507,14 +505,13 @@ def test_trigger_control(sandbox):
                     "args": {
                         "topic": "bar",
                     },
-                    "control_topic":
-                        "trigger_control_2",
+                    "control_topic": "trigger_control_2",
                 }],
             }],
         }],
     })
 
-    foo.pub(f"foo_0")
+    foo.pub("foo_0")
     time.sleep(0.5)
 
     bar.pub("save_0")
@@ -523,7 +520,7 @@ def test_trigger_control(sandbox):
     trigger_controls[0].pub("off")
     time.sleep(0.5)
 
-    foo.pub(f"foo_1")
+    foo.pub("foo_1")
     time.sleep(0.5)
 
     bar.pub("save_1")
@@ -532,7 +529,7 @@ def test_trigger_control(sandbox):
     trigger_controls[1].pub("off")
     time.sleep(0.5)
 
-    foo.pub(f"foo_2")
+    foo.pub("foo_2")
     time.sleep(0.5)
 
     bar.pub("save_2")
@@ -541,7 +538,7 @@ def test_trigger_control(sandbox):
     trigger_controls[2].pub("on")
     time.sleep(0.5)
 
-    foo.pub(f"foo_3")
+    foo.pub("foo_3")
     time.sleep(0.5)
 
     bar.pub("save_3")
@@ -549,6 +546,4 @@ def test_trigger_control(sandbox):
 
     sandbox.shutdown()
 
-    assert sandbox.logged_packets() == {
-        "foo": ["foo_0", "foo_3"]
-    }
+    assert sandbox.logged_packets() == {"foo": ["foo_0", "foo_3"]}

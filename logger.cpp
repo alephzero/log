@@ -74,7 +74,7 @@ class FileLogger {
   std::mutex mtx;
 
   std::deque<Packet> buffer;
-  std::vector<Policy> policies;
+  std::vector<std::unique_ptr<Policy>> policies;
 
   std::filesystem::path write_progress_path;
   std::filesystem::path write_complete_path;
@@ -94,15 +94,18 @@ class FileLogger {
       return;
     }
 
-    // Create trigger controllers.
-    std::vector<Trigger::Controller*> trigger_controllers;
-    if (!rule.trigger_control_topic.empty()) {
-      trigger_controllers.push_back(Trigger::Controller::get(rule.trigger_control_topic));
-    }
-
     // Start all policies.
     for (auto&& policy_cfg : rule.policies) {
-      policies.emplace_back(policy_cfg, trigger_controllers, &mtx);
+      auto policy = std::make_unique<Policy>(policy_cfg, &mtx);
+
+      if (!config_.trigger_control_topic.empty()) {
+        Trigger::Gate::get(config_.trigger_control_topic)->add_listener(policy.get());
+      }
+      if (!rule.trigger_control_topic.empty()) {
+        Trigger::Gate::get(rule.trigger_control_topic)->add_listener(policy.get());
+      }
+
+      policies.push_back(std::move(policy));
     }
 
     // Start the reader. We'll look at all possible packets, and filter internally.
@@ -136,7 +139,7 @@ class FileLogger {
         writer.write(pkt);
       }
       for (auto&& p : policies) {
-        p.ondrop(pkt);
+        p->ondrop(pkt);
       }
     }
 
@@ -160,7 +163,7 @@ class FileLogger {
   void onpkt(Packet pkt) {
     // Let all policies know about the new packet.
     for (auto&& p : policies) {
-      p.onpkt(pkt);
+      p->onpkt(pkt);
     }
 
     // Push the packet to the back of the buffer.
@@ -178,7 +181,7 @@ class FileLogger {
         };
         case SaveDecision::DROP: {
           for (auto&& p : policies) {
-            p.ondrop(buffer.front());
+            p->ondrop(buffer.front());
           }
           buffer.pop_front();
           break;
@@ -196,7 +199,7 @@ class FileLogger {
     // If all policies want to drop: DROP.
     SaveDecision sd = SaveDecision::DROP;
     for (auto&& p : policies) {
-      auto pd = p.should_save(pkt);
+      auto pd = p->should_save(pkt);
       if (pd == SaveDecision::SAVE) {
         return SaveDecision::SAVE;
       } else if (pd == SaveDecision::DEFER) {

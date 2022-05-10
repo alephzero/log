@@ -16,7 +16,7 @@ enum class SaveDecision {
   DEFER,
 };
 
-class Policy final {
+class Policy final : public Trigger::Listener {
  public:
   struct Config {
     std::string type;
@@ -25,13 +25,10 @@ class Policy final {
     std::string trigger_control_topic;
   };
 
-  struct Base : Trigger::EventCallbacks {
+  struct Base : Trigger::Listener {
     virtual ~Base() = default;
     virtual void onpkt(Packet) {}
     virtual void ondrop(Packet) {}
-    virtual void ontrigger() {}
-    virtual void onpause() {}
-    virtual void onresume() {}
     virtual SaveDecision should_save(Packet) = 0;
   };
 
@@ -46,34 +43,47 @@ class Policy final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Policy(Config config, std::vector<Trigger::Controller*> trigger_controllers, std::mutex* mtx) {
+  Policy(Config config, std::mutex* mtx_)
+      : mtx{mtx_} {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown policy: " + config.type);
     }
     base = registrar()->at(config.type)(config.args);
 
     if (!config.trigger_control_topic.empty()) {
-      trigger_controllers.push_back(Trigger::Controller::get(config.trigger_control_topic));
+      Trigger::Gate::get(config.trigger_control_topic)->add_listener(this);
     }
 
     for (auto&& tcfg : config.triggers) {
-      triggers.emplace_back(tcfg, trigger_controllers, [this, mtx]() {
-        std::unique_lock<std::mutex> lk(*mtx);
-        base->ontrigger();
-      });
+      triggers.emplace_back(tcfg, this);
     }
   }
 
   void onpkt(Packet pkt) { base->onpkt(pkt); }
   void ondrop(Packet pkt) { base->ondrop(pkt); }
-  void ontrigger() { base->ontrigger(); }
-  void onpause() { base->onpause(); }
-  void onresume() { base->onresume(); }
+  void ontrigger() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    if (triggers_enabled) {
+      base->ontrigger();
+    }
+  }
+  void onpause() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    base->onpause();
+    triggers_enabled = false;
+  }
+  void onresume() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    triggers_enabled = true;
+    base->onresume();
+  }
   SaveDecision should_save(Packet pkt) { return base->should_save(pkt); }
 
  private:
+  std::mutex* mtx;
   std::unique_ptr<Base> base;
   std::vector<Trigger> triggers;
+  bool triggers_enabled{true};
 };
 
 A0_STATIC_INLINE
