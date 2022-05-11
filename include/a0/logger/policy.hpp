@@ -16,20 +16,19 @@ enum class SaveDecision {
   DEFER,
 };
 
-class Policy final {
+class Policy final : public Trigger::Listener {
  public:
   struct Config {
     std::string type;
     nlohmann::json args;
     std::vector<Trigger::Config> triggers;
+    std::string trigger_control_topic;
   };
 
-  struct Base {
+  struct Base : Trigger::Listener {
     virtual ~Base() = default;
     virtual void onpkt(Packet) {}
     virtual void ondrop(Packet) {}
-    // ontrigger will be called on separate threads than the other methods.
-    virtual void ontrigger() {}
     virtual SaveDecision should_save(Packet) = 0;
   };
 
@@ -44,28 +43,47 @@ class Policy final {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Policy(Config config, std::mutex* mtx) {
+  Policy(Config config, std::mutex* mtx_)
+      : mtx{mtx_} {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown policy: " + config.type);
     }
     base = registrar()->at(config.type)(config.args);
 
+    if (!config.trigger_control_topic.empty()) {
+      Trigger::Gate::get(config.trigger_control_topic)->add_listener(this);
+    }
+
     for (auto&& tcfg : config.triggers) {
-      triggers.emplace_back(tcfg, [this, mtx]() {
-        std::unique_lock<std::mutex> lk(*mtx);
-        base->ontrigger();
-      });
+      triggers.emplace_back(tcfg, this);
     }
   }
 
   void onpkt(Packet pkt) { base->onpkt(pkt); }
   void ondrop(Packet pkt) { base->ondrop(pkt); }
-  void ontrigger() { base->ontrigger(); }
+  void ontrigger() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    if (triggers_enabled) {
+      base->ontrigger();
+    }
+  }
+  void onpause() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    base->onpause();
+    triggers_enabled = false;
+  }
+  void onresume() override {
+    std::unique_lock<std::mutex> lk{*mtx};
+    triggers_enabled = true;
+    base->onresume();
+  }
   SaveDecision should_save(Packet pkt) { return base->should_save(pkt); }
 
  private:
+  std::mutex* mtx;
   std::unique_ptr<Base> base;
   std::vector<Trigger> triggers;
+  bool triggers_enabled{true};
 };
 
 A0_STATIC_INLINE
@@ -76,6 +94,9 @@ void from_json(const nlohmann::json& j, Policy::Config& t) {
   }
   if (j.count("triggers")) {
     j.at("triggers").get_to(t.triggers);
+  }
+  if (j.count("trigger_control_topic")) {
+    j.at("trigger_control_topic").get_to(t.trigger_control_topic);
   }
 }
 

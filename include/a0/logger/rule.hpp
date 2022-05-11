@@ -39,6 +39,7 @@ struct Rule {
   std::optional<std::chrono::nanoseconds> max_logfile_duration;
 
   std::vector<a0::logger::Policy::Config> policies;
+  std::string trigger_control_topic;
 
   std::string relative_watch_path() const {
     static std::map<Protocol, std::string> tmpl_map{
@@ -79,6 +80,9 @@ static inline void from_json(const nlohmann::json& j, Rule& r) {
   }
   if (j.count("max_logfile_duration")) {
     r.max_logfile_duration = parse_duration(j.at("max_logfile_duration"));
+  }
+  if (j.count("trigger_control_topic")) {
+    r.trigger_control_topic = j.at("trigger_control_topic");
   }
 }
 

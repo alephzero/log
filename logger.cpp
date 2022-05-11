@@ -26,6 +26,7 @@ struct Config {
   std::filesystem::path searchpath;
   std::filesystem::path savepath;
   std::vector<Rule> rules;
+  std::string trigger_control_topic;
   uint64_t default_max_logfile_size;
   std::chrono::nanoseconds default_max_logfile_duration;
   TimeMono start_time_mono;
@@ -38,6 +39,9 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
   }
   c.savepath = j.at("savepath").get<std::string>();
   j.at("rules").get_to(c.rules);
+  if (j.count("trigger_control_topic")) {
+    c.trigger_control_topic = j.at("trigger_control_topic");
+  }
 
   c.default_max_logfile_size = kDefaultMaxLogfileSize;
   if (j.count("default_max_logfile_size")) {
@@ -53,6 +57,12 @@ static inline void from_json(const nlohmann::json& j, Config& c) {
   }
 }
 
+static inline std::string_view env(std::string_view key,
+                                   std::string_view default_) {
+  const char* val = std::getenv(key.data());
+  return val ? val : default_;
+}
+
 void announce(const nlohmann::json& j) {
   static Publisher p(std::string(env::topic()) + "/announce");
   p.pub(j.dump());
@@ -64,7 +74,7 @@ class FileLogger {
   std::mutex mtx;
 
   std::deque<Packet> buffer;
-  std::vector<Policy> policies;
+  std::vector<std::unique_ptr<Policy>> policies;
 
   std::filesystem::path write_progress_path;
   std::filesystem::path write_complete_path;
@@ -86,7 +96,16 @@ class FileLogger {
 
     // Start all policies.
     for (auto&& policy_cfg : rule.policies) {
-      policies.emplace_back(policy_cfg, &mtx);
+      auto policy = std::make_unique<Policy>(policy_cfg, &mtx);
+
+      if (!config_.trigger_control_topic.empty()) {
+        Trigger::Gate::get(config_.trigger_control_topic)->add_listener(policy.get());
+      }
+      if (!rule.trigger_control_topic.empty()) {
+        Trigger::Gate::get(rule.trigger_control_topic)->add_listener(policy.get());
+      }
+
+      policies.push_back(std::move(policy));
     }
 
     // Start the reader. We'll look at all possible packets, and filter internally.
@@ -120,7 +139,7 @@ class FileLogger {
         writer.write(pkt);
       }
       for (auto&& p : policies) {
-        p.ondrop(pkt);
+        p->ondrop(pkt);
       }
     }
 
@@ -144,7 +163,7 @@ class FileLogger {
   void onpkt(Packet pkt) {
     // Let all policies know about the new packet.
     for (auto&& p : policies) {
-      p.onpkt(pkt);
+      p->onpkt(pkt);
     }
 
     // Push the packet to the back of the buffer.
@@ -162,7 +181,7 @@ class FileLogger {
         };
         case SaveDecision::DROP: {
           for (auto&& p : policies) {
-            p.ondrop(buffer.front());
+            p->ondrop(buffer.front());
           }
           buffer.pop_front();
           break;
@@ -180,7 +199,7 @@ class FileLogger {
     // If all policies want to drop: DROP.
     SaveDecision sd = SaveDecision::DROP;
     for (auto&& p : policies) {
-      auto pd = p.should_save(pkt);
+      auto pd = p->should_save(pkt);
       if (pd == SaveDecision::SAVE) {
         return SaveDecision::SAVE;
       } else if (pd == SaveDecision::DEFER) {
@@ -328,9 +347,13 @@ class Logger {
 }  // namespace a0::logger
 
 int main() {
+  auto LOG_READY_TOPIC = std::string(a0::logger::env("LOG_READY_TOPIC", "log_ready"));
+
   a0::Cfg cfg(a0::env::topic());
   auto config = cfg.var<a0::logger::Config>("");
   a0::logger::Logger logger(*config);
+
+  a0::Publisher(LOG_READY_TOPIC).pub("ready");
 
   sigset_t sigset;
   sigemptyset(&sigset);
