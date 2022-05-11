@@ -55,6 +55,7 @@ class RunLogger:
         )
 
         log_ready.read_blocking(timeout=10)
+        time.sleep(0.5)
 
     def shutdown(self):
         if self.logger_proc:
