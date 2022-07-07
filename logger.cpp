@@ -94,18 +94,19 @@ class FileLogger {
       return;
     }
 
+    // Collect "global" trigger_control_topics.
+    std::vector<std::string> extra_trigger_control_topics;
+    if (!config_.trigger_control_topic.empty()) {
+      extra_trigger_control_topics.push_back(config_.trigger_control_topic);
+    }
+    if (!rule.trigger_control_topic.empty()) {
+      extra_trigger_control_topics.push_back(rule.trigger_control_topic);
+    }
+
     // Start all policies.
     for (auto&& policy_cfg : rule.policies) {
-      auto policy = std::make_unique<Policy>(policy_cfg, &mtx);
-
-      if (!config_.trigger_control_topic.empty()) {
-        Trigger::Gate::get(config_.trigger_control_topic)->add_listener(policy.get());
-      }
-      if (!rule.trigger_control_topic.empty()) {
-        Trigger::Gate::get(rule.trigger_control_topic)->add_listener(policy.get());
-      }
-
-      policies.push_back(std::move(policy));
+      policies.push_back(std::make_unique<Policy>(
+          policy_cfg, &mtx, extra_trigger_control_topics));
     }
 
     // Start the reader. We'll look at all possible packets, and filter internally.

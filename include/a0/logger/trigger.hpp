@@ -88,11 +88,6 @@ class Trigger final {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown trigger: " + config.type);
     }
-
-    if (!config.control_topic.empty()) {
-      Gate::get(config.control_topic)->add_listener(listener);
-    }
-
     base = registrar()->at(config.type)(config.args, [listener]() { listener->ontrigger(); });
   }
 

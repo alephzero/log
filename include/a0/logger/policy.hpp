@@ -43,15 +43,32 @@ class Policy final : public Trigger::Listener {
     return registrar()->insert({std::move(key), std::move(fact)}).second;
   }
 
-  Policy(Config config, std::mutex* mtx_)
+  Policy(Config config,
+         std::mutex* mtx_,
+         std::vector<std::string> trigger_control_topics)
       : mtx{mtx_} {
     if (!registrar()->count(config.type)) {
       throw std::invalid_argument("Unknown policy: " + config.type);
     }
-    base = registrar()->at(config.type)(config.args);
 
     if (!config.trigger_control_topic.empty()) {
+      trigger_control_topics.push_back(config.trigger_control_topic);
+    }
+    for (auto&& tcfg : config.triggers) {
+      if (!tcfg.control_topic.empty()) {
+        trigger_control_topics.push_back(tcfg.control_topic);
+      }
+    }
+
+    for (auto&& trigger_control_topic : trigger_control_topics) {
       Trigger::Gate::get(config.trigger_control_topic)->add_listener(this);
+    }
+
+    base = registrar()->at(config.type)(config.args);
+    if (trigger_control_topics.empty()) {
+      onresume();
+    } else {
+      onpause();
     }
 
     for (auto&& tcfg : config.triggers) {
