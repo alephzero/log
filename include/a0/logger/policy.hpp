@@ -61,7 +61,7 @@ class Policy final : public Trigger::Listener {
     }
 
     for (auto&& trigger_control_topic : trigger_control_topics) {
-      Trigger::Gate::get(config.trigger_control_topic)->add_listener(this);
+      Trigger::Gate::get(trigger_control_topic)->add_listener(this);
     }
 
     base = registrar()->at(config.type)(config.args);
