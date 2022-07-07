@@ -518,7 +518,7 @@ def test_trigger_control(sandbox):
     bar.pub("save_0")
     time.sleep(0.5)
 
-    trigger_controls[0].pub("off")
+    trigger_controls[0].pub("on")
     time.sleep(0.5)
 
     foo.pub("foo_1")
@@ -527,7 +527,7 @@ def test_trigger_control(sandbox):
     bar.pub("save_1")
     time.sleep(0.5)
 
-    trigger_controls[1].pub("off")
+    trigger_controls[1].pub("on")
     time.sleep(0.5)
 
     foo.pub("foo_2")
@@ -536,7 +536,7 @@ def test_trigger_control(sandbox):
     bar.pub("save_2")
     time.sleep(0.5)
 
-    trigger_controls[2].pub("on")
+    trigger_controls[2].pub("off")
     time.sleep(0.5)
 
     foo.pub("foo_3")
@@ -547,4 +547,4 @@ def test_trigger_control(sandbox):
 
     sandbox.shutdown()
 
-    assert sandbox.logged_packets() == {"foo": ["foo_0", "foo_3"]}
+    assert sandbox.logged_packets() == {"foo": ["foo_1", "foo_2"]}
