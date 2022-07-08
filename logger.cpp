@@ -348,13 +348,12 @@ class Logger {
 }  // namespace a0::logger
 
 int main() {
-  auto LOG_READY_TOPIC = std::string(a0::logger::env("LOG_READY_TOPIC", "log_ready"));
-
   a0::Cfg cfg(a0::env::topic());
   auto config = cfg.var<a0::logger::Config>("");
   a0::logger::Logger logger(*config);
 
-  a0::Publisher(LOG_READY_TOPIC).pub("ready");
+  a0::Deadman deadman(a0::env::topic());
+  deadman.take();
 
   sigset_t sigset;
   sigemptyset(&sigset);

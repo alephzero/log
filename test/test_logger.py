@@ -41,8 +41,6 @@ class RunLogger:
     def start(self, cfg):
         assert not self.logger_proc
 
-        log_ready = a0.SubscriberSync("log_ready")
-
         os.environ["A0_TOPIC"] = "test"
         a0.Cfg(a0.env.topic()).write(json.dumps(cfg))
 
@@ -54,7 +52,7 @@ class RunLogger:
             env=os.environ.copy(),
         )
 
-        log_ready.read_blocking(timeout=10)
+        a0.Deadman("test").wait_taken(timeout=10)
         time.sleep(0.5)
 
     def shutdown(self):
@@ -118,7 +116,6 @@ def test_policy_save_all(sandbox):
     sandbox.shutdown()
 
     assert sandbox.logged_packets() == {
-        "log_ready": ["ready"],
         "foo": [f"foo_{i}" for i in range(10)],
         "bar": [f"bar_{i}" for i in range(10)],
     }
@@ -158,7 +155,6 @@ def test_policy_drop_all(sandbox):
     sandbox.shutdown()
 
     assert sandbox.logged_packets() == {
-        "log_ready": ["ready"],
         "bar": [f"bar_{i}" for i in range(10)],
     }
 
